@@ -15,7 +15,7 @@ import subprocess
 import sys
 import time
 
-DEFAULT_CONTAINER = "ev-charge-local-frontend-1"
+DEFAULT_CONTAINER = "chargepin_repo-frontend-1"
 LOG_PATH = Path(__file__).resolve().parent / "logs" / "autoheal.jsonl"
 
 

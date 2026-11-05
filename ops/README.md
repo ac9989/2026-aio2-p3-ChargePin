@@ -1,7 +1,7 @@
 # ChargePin local Docker Auto Healing watcher (Step 1)
 
 Scope: local development, Windows PowerShell. **Only the Streamlit frontend**
-`ev-charge-local-frontend-1` is eligible for automated restarts. PostgreSQL and
+`chargepin_repo-frontend-1` is eligible for automated restarts. PostgreSQL and
 Redis are deliberately excluded to protect data and support investigation.
 
 ## How it works
