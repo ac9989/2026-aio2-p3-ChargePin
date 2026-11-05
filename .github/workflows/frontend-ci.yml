@@ -53,3 +53,36 @@ jobs:
 
       - name: Build frontend Docker image
         run: docker build -f frontend/Dockerfile -t chargepin-frontend:ci frontend
+
+  publish-frontend:
+    name: Publish Frontend to GHCR
+    runs-on: ubuntu-latest
+    needs: docker-build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/ac9989/chargepin-frontend:latest
+            ghcr.io/ac9989/chargepin-frontend:sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/ac9989/2026-aio2-p3-ChargePin
+            org.opencontainers.image.description=ChargePin preview frontend
