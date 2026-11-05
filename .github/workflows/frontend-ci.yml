@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   frontend-tests:
-    name: Frontend 31 Tests
+    name: Frontend and Auto Healing Tests
     runs-on: ubuntu-latest
 
     steps:
@@ -34,6 +34,9 @@ jobs:
       - name: Run frontend tests
         working-directory: frontend
         run: python -m unittest discover -s ../tests/frontend -v
+
+      - name: Run Auto Healing unit tests
+        run: python -m unittest discover -s tests/ops -v
 
   docker-build:
     name: Docker Build Validation

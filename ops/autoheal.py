@@ -1,0 +1,222 @@
+"""Local-only ChargePin Docker health watcher.
+
+Explicit --apply is required before this program restarts a container.
+The monitor only restarts a RUNNING container whose Docker health status is
+unhealthy for multiple consecutive polls. It never restarts stopped containers.
+"""
+from __future__ import annotations
+
+import argparse
+from collections import deque
+from datetime import datetime, timezone
+import json
+from pathlib import Path
+import subprocess
+import sys
+import time
+
+DEFAULT_CONTAINER = "ev-charge-local-frontend-1"
+LOG_PATH = Path(__file__).resolve().parent / "logs" / "autoheal.jsonl"
+
+
+def docker_state(container: str) -> dict:
+    cmd = ["docker", "inspect", "--format", "{{json .State}}", container]
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=15, check=False)
+    if proc.returncode:
+        raise RuntimeError(proc.stderr.strip() or f"docker inspect exited {proc.returncode}")
+    data = json.loads(proc.stdout)
+    return {
+        "status": data.get("Status", "unknown"),
+        "health": data.get("Health", {}).get("Status", "no-healthcheck"),
+    }
+
+
+def docker_restart(container: str) -> None:
+    proc = subprocess.run(["docker", "restart", container], capture_output=True, text=True,
+                          timeout=45, check=False)
+    if proc.returncode:
+        raise RuntimeError(proc.stderr.strip() or f"docker restart exited {proc.returncode}")
+
+
+def record(event: str, container: str, **details) -> None:
+    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "timestamp_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "event": event,
+        "container": container,
+        **details,
+    }
+    with LOG_PATH.open("a", encoding="utf-8") as fp:
+        fp.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    print(f"[{payload['timestamp_utc']}] {event} {details}", flush=True)
+
+
+def recent_restarts(log_path: Path, container: str, now_epoch: float, window: int) -> deque[float]:
+    restarts: deque[float] = deque()
+    if not log_path.exists():
+        return restarts
+    for line in log_path.read_text(encoding="utf-8").splitlines():
+        try:
+            item = json.loads(line)
+            if item.get("container") != container or item.get("event") != "restart_attempt":
+                continue
+            dt = datetime.fromisoformat(item["timestamp_utc"])
+            ts = dt.timestamp()
+            if 0 <= now_epoch - ts < window:
+                restarts.append(ts)
+        except (ValueError, KeyError, TypeError):
+            continue
+    return restarts
+
+
+class Watcher:
+    def __init__(self, container: str, *, apply: bool, consecutive: int = 2,
+                 cooldown: int = 120, window: int = 600, max_restarts: int = 3,
+                 recovery_timeout: int = 120, initial_restarts=None,
+                 emit=record, restart=docker_restart):
+        self.container = container
+        self.apply = apply
+        self.consecutive = consecutive
+        self.cooldown = cooldown
+        self.window = window
+        self.max_restarts = max_restarts
+        self.recovery_timeout = recovery_timeout
+        self.restarts: deque[float] = deque(initial_restarts or [])
+        self.emit = emit
+        self.restart = restart
+        self.unhealthy_streak = 0
+        self.first_unhealthy_at: float | None = None
+        self.recovery_started: float | None = None
+        self.last_seen: tuple[str, str] | None = None
+        self.last_note: str | None = None
+
+    def step(self, status: str, health: str, now: float) -> None:
+        key = (status, health)
+        if key != self.last_seen:
+            self.emit("state_changed", self.container, status=status, health=health)
+            self.last_seen = key
+            self.last_note = None
+
+        # Explicitly refuse to restart stopped containers; native restart policy
+        # handles unexpected process termination on its own.
+        if status != "running":
+            self.unhealthy_streak = 0
+            self.first_unhealthy_at = None
+            if self.recovery_started is not None:
+                self.emit("recovery_interrupted", self.container, status=status)
+                self.recovery_started = None
+            return
+
+        if health == "healthy":
+            if self.recovery_started is not None:
+                self.emit("recovered", self.container,
+                          duration_seconds=round(now - self.recovery_started, 2))
+                self.recovery_started = None
+            self.unhealthy_streak = 0
+            self.first_unhealthy_at = None
+            return
+
+        if self.recovery_started is not None:
+            if now - self.recovery_started >= self.recovery_timeout:
+                self.emit("recovery_timeout", self.container,
+                          duration_seconds=round(now - self.recovery_started, 2))
+                self.recovery_started = None
+                self.unhealthy_streak = 0
+                self.first_unhealthy_at = None
+            return
+
+        if health != "unhealthy":
+            # starting, or no healthcheck: never intervene
+            self.unhealthy_streak = 0
+            self.first_unhealthy_at = None
+            return
+
+        if self.unhealthy_streak == 0:
+            self.first_unhealthy_at = now
+            self.emit("unhealthy_detected", self.container)
+        self.unhealthy_streak += 1
+        if self.unhealthy_streak < self.consecutive:
+            return
+
+        while self.restarts and now - self.restarts[0] >= self.window:
+            self.restarts.popleft()
+
+        if not self.apply:
+            if self.last_note != "dry_run":
+                self.emit("dry_run_would_restart", self.container, streak=self.unhealthy_streak)
+                self.last_note = "dry_run"
+            return
+        if len(self.restarts) >= self.max_restarts:
+            if self.last_note != "rate_limited":
+                self.emit("restart_rate_limited", self.container, count=len(self.restarts),
+                          window_seconds=self.window)
+                self.last_note = "rate_limited"
+            return
+        if self.restarts and now - self.restarts[-1] < self.cooldown:
+            if self.last_note != "cooldown":
+                self.emit("restart_cooldown", self.container,
+                          wait_seconds=round(self.cooldown - (now - self.restarts[-1]), 2))
+                self.last_note = "cooldown"
+            return
+
+        # Persist attempt before issuing restart, so a watcher process reboot
+        # cannot reset the rate limit.
+        self.emit("restart_attempt", self.container, streak=self.unhealthy_streak)
+        self.restarts.append(now)
+        try:
+            self.restart(self.container)
+        except Exception as exc:
+            self.emit("restart_failed", self.container, error=str(exc))
+            self.unhealthy_streak = 0
+            self.first_unhealthy_at = None
+            self.last_note = None
+            return
+        self.emit("restart_command_succeeded", self.container)
+        self.recovery_started = now
+        self.unhealthy_streak = 0
+        self.first_unhealthy_at = None
+        self.last_note = None
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--container", default=DEFAULT_CONTAINER,
+                        help="target container name (default: frontend only)")
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--once", action="store_true", help="show Docker state without monitoring")
+    mode.add_argument("--watch", action="store_true", help="continuously monitor health")
+    parser.add_argument("--apply", action="store_true", help="actually restart unhealthy frontend; default is dry-run")
+    parser.add_argument("--interval", type=int, default=15, help="poll interval seconds (minimum: 5)")
+    args = parser.parse_args()
+    if args.interval < 5:
+        parser.error("--interval must be >= 5 seconds")
+    if args.once and args.apply:
+        parser.error("--apply only works with --watch")
+    try:
+        state = docker_state(args.container)
+    except (FileNotFoundError, subprocess.TimeoutExpired, ValueError, RuntimeError) as exc:
+        print(f"Docker state unavailable: {exc}", file=sys.stderr)
+        return 1
+    print(f"{args.container}: status={state['status']} health={state['health']}")
+    if args.once:
+        return 0
+
+    history = recent_restarts(LOG_PATH, args.container, time.time(), 600)
+    watcher = Watcher(args.container, apply=args.apply, initial_restarts=history)
+    print(f"Monitoring {args.container} every {args.interval}s, mode={'APPLY' if args.apply else 'DRY-RUN'}")
+    print("Ctrl+C to stop watcher. It never restarts a manually stopped container.")
+    try:
+        while True:
+            try:
+                state = docker_state(args.container)
+                watcher.step(state["status"], state["health"], time.time())
+            except (FileNotFoundError, subprocess.TimeoutExpired, ValueError, RuntimeError) as exc:
+                watcher.emit("inspect_error", args.container, error=str(exc))
+            time.sleep(args.interval)
+    except KeyboardInterrupt:
+        print("\nWatcher stopped.")
+        return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
