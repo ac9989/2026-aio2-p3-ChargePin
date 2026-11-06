@@ -1,0 +1,24 @@
+# Local secrets and runtime artifacts
+.env
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Streamlit's local state
+.streamlit/secrets.toml
+
+# Local test and coverage artifacts
+*.log
+.coverage
+.coverage.*
+htmlcov/
+
+# Local editor and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Temporary safety copy made during the frontend replacement
+Frontend.before-team-frontend-*/

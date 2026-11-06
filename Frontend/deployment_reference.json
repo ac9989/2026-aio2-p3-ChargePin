@@ -1,0 +1,75 @@
+{
+  "source_url": "https://docs.google.com/spreadsheets/d/1REaJ0qNf6k_KcAHylli05kOVM_SWHloR/edit?gid=632793659",
+  "source_date": "2026-11-05",
+  "scope": "프론트엔드",
+  "live": false,
+  "stages": [
+    {
+      "title": "자동 테스트",
+      "mode": "GitHub Actions",
+      "status": "문서상 완료",
+      "detail": "프론트 31개 · Auto Healing 9개",
+      "url": "https://github.com/ac9989/2026-aio2-p3-ChargePin/actions/runs/41949839919"
+    },
+    {
+      "title": "Docker 빌드",
+      "mode": "자동",
+      "status": "문서상 완료",
+      "detail": "테스트 이후 이미지 빌드",
+      "url": "https://github.com/ac9989/2026-aio2-p3-ChargePin/actions/runs/41947214674"
+    },
+    {
+      "title": "GHCR 게시",
+      "mode": "main 성공 시 자동",
+      "status": "문서상 완료",
+      "detail": "latest · sha 태그",
+      "url": "https://github.com/ac9989/2026-aio2-p3-ChargePin/actions/runs/41947214674"
+    },
+    {
+      "title": "EC2 시험 배포",
+      "mode": "수동",
+      "status": "문서상 완료",
+      "detail": "현재 수동 배포 · GitHub 조회 연동만으로 자동 배포되지 않음",
+      "url": null
+    },
+    {
+      "title": "접속·헬스 확인",
+      "mode": "수동 · 자동화 가능",
+      "status": "문서상 완료",
+      "detail": "현재 SSH·화면 수동 확인 · 헬스 자동 확인은 별도 구현 필요",
+      "url": null
+    }
+  ],
+  "checks": [
+    {
+      "title": "CI 실패 차단 실증",
+      "status": "미착수",
+      "detail": "고의 실패 run과 후속 build/publish 생략 증빙 필요"
+    },
+    {
+      "title": "실패 알림 수신",
+      "status": "미착수",
+      "detail": "수신 채널 확정 및 실제 알림 증빙 필요"
+    },
+    {
+      "title": "필수 장애시험",
+      "status": "0 / 12회",
+      "detail": "외부 API · Executor · DB · LLM 오류 각각 3회"
+    },
+    {
+      "title": "자동복구 실증",
+      "status": "시험 1회 기록",
+      "detail": "시험용 컨테이너 8.48초 · 필수 장애시험과 별도"
+    },
+    {
+      "title": "EC2 자동 CD·롤백",
+      "status": "보류",
+      "detail": "현재 EC2 시험 배포는 수동"
+    },
+    {
+      "title": "최종 백엔드 통합",
+      "status": "문서상 대기",
+      "detail": "문서 작성 당시 기록 · 현재 로컬 연결 상태와 별도"
+    }
+  ]
+}

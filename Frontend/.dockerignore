@@ -1,0 +1,8 @@
+handoff/
+__pycache__/
+**/__pycache__/
+*.pyc
+.env
+.env.*
+.git/
+.venv/
