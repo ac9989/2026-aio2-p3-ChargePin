@@ -60,13 +60,13 @@ def suggest_places(body: PlaceSuggestInput, _session: AuthSession = Depends(requ
 
 @app.post("/api/v1/chat/plan")
 def chat_plan(body: ChatPlanInput, session: AuthSession = Depends(require_session)):
-    return orchestrator.plan_chat(body.message, session.role)
+    return orchestrator.plan_chat(body.message, session.role, session.session_ref)
 
 
 @app.post("/api/v1/search/{request_id}/confirm")
 def confirm_search(request_id: str, body: ConfirmInput, session: AuthSession = Depends(require_session)):
     try:
-        return orchestrator.confirm_chat(request_id, body, session.role)
+        return orchestrator.confirm_chat(request_id, body, session.role, session.session_ref)
     except KeyError as error:
         raise HTTPException(status_code=404, detail="확인 대기 중인 요청을 찾지 못했습니다.") from error
 

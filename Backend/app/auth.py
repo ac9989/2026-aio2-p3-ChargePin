@@ -24,6 +24,7 @@ ROLE_KEYS = {
 class AuthSession:
     role: str
     expires_at: datetime
+    session_ref: str
 
 
 def _secret(name: str) -> str:
@@ -51,7 +52,12 @@ class SessionAuthenticator:
         )
         if role is None:
             raise HTTPException(status_code=401, detail="비밀번호가 올바르지 않습니다.")
-        session = AuthSession(role=role, expires_at=datetime.now(KST) + timedelta(hours=SESSION_TTL_HOURS))
+        session = AuthSession(
+            role=role,
+            expires_at=datetime.now(KST) + timedelta(hours=SESSION_TTL_HOURS),
+            # This is a server-only reference for short-lived chat context, not the access token.
+            session_ref=secrets.token_urlsafe(16),
+        )
         token = secrets.token_urlsafe(32)
         with self._lock:
             self._sessions = {value: saved for value, saved in self._sessions.items() if saved.expires_at > datetime.now(KST)}

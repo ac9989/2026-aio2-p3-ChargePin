@@ -9,6 +9,7 @@ from typing import Any
 class MemoryKeeper:
     handoffs: dict[str, dict[str, Any]] = field(default_factory=dict)
     results: dict[str, dict[str, Any]] = field(default_factory=dict)
+    chat_contexts: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def start(self, request_id: str, handoff: dict[str, Any]) -> None:
         self.handoffs[request_id] = {**handoff, "retry_history": [], "audit_events": ["request_created"]}
@@ -25,3 +26,10 @@ class MemoryKeeper:
 
     def get_result(self, request_id: str) -> dict[str, Any] | None:
         return self.results.get(request_id)
+
+    def set_chat_context(self, session_ref: str, context: dict[str, Any]) -> None:
+        """Keep only the last confirmed search conditions for a logged-in chat session."""
+        self.chat_contexts[session_ref] = context
+
+    def get_chat_context(self, session_ref: str) -> dict[str, Any] | None:
+        return self.chat_contexts.get(session_ref)

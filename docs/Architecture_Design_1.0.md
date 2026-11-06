@@ -79,10 +79,10 @@ flowchart LR
 
 | 역할 | 하는 일 | 입력 | 출력 | 허용 | 금지 |
 |---|---|---|---|---|---|
-| Planner | 자연어를 검색 조건으로 해석하고 빠진 조건을 묻고 확인 카드를 만든다. | 가드레일 통과 메시지, 최소 세션 문맥 | `SearchRequestDraft`, 추가 질문, 확인 문구 | 구조화된 자연어 해석 | 카카오/환경공단 호출, 실제 결과 생성, 상태 단정 |
+| Planner | `gpt-4o-mini` 구조화 출력으로 자연어를 검색 조건으로 해석하고 빠진 조건을 묻고 확인 카드를 만든다. | 가드레일 통과 메시지, 최소 세션 문맥 | `SearchRequestDraft`, 추가 질문, 확인 문구 | 도구 없는 구조화 모델 호출 | 카카오/환경공단·운영 도구 호출, 실제 결과 생성, 상태 단정 |
 | Executor | 확정된 조건 또는 첫 진입 기본 조건으로 충전소·충전기 데이터를 조회·정규화한다. 실제 결과를 찾는 역할이다. | 확정/기본 SearchRequest, 실행 계획, 허용 도구 | `SourceSnapshot[]`, 정규화 결과, 출처/갱신 시각, 오류 분류 | 허용목록 API 호출, 병렬 수집, Cache 조회 | 정책 변경, 최종 품질 판정, 재시도 한도 변경, 근거 없는 합성 |
 | Critic | 결과를 독립 검증해 통과·재시도·안전 응답을 결정한다. | 정규화 결과, 실행 계획, 품질 정책, 시도 상태 | `PASS`, `RETRY_REQUEST`, `SAFE_UNAVAILABLE`, 품질 발견 목록 | 수치·최신성·출처·출력 계약 검사, 재시도 요청 | API 호출, 데이터 수정/생성, 재시도 직접 실행 |
-| Memory Keeper | 세션, Handoff 버전, 중간 결과, 재시도, 감사 이력을 보존한다. | 단계별 Handoff, 세션/운영 이벤트 | Handoff 버전, 세션 참조, 재시도/감사 이력 | 상태 저장·조회, 버전·해시 연결 | 검색, 품질 판정, 권한 변경, 외부 API 호출 |
+| Memory Keeper | 세션, Handoff 버전, 중간 결과, 재시도, 감사 이력을 보존한다. 마지막 확정 장소·조건 요약도 세션별로 보존한다. | 단계별 Handoff, 세션/운영 이벤트 | Handoff 버전, 마지막 확정 조건 요약, 재시도/감사 이력 | 상태 저장·조회, 버전·해시 연결 | 검색, 품질 판정, 권한 변경, 외부 API 호출 |
 
 외부 데이터 API는 카카오·환경공단 같은 검색 대상 출처를 의미한다. Planner/Critic이 모델 호출을 하더라도 모델은 이 출처 도구, 운영 도구, 비밀값에 접근할 수 없다.
 
@@ -90,7 +90,7 @@ flowchart LR
 
 | Handoff 영역 | 쓰기 역할 | 읽기 역할 |
 |---|---|---|
-| `search_request_draft` | Planner | UI, Orchestrator |
+| `search_request_draft`, `planner_engine` | Planner | UI, Orchestrator, 감사 |
 | `confirmation` | UI/API Gateway | Orchestrator, Executor, 감사 |
 | `execution_plan` | Orchestrator | Executor, Critic, 감사 |
 | `source_snapshots`, `normalized_results` | Executor | Critic, 출력 계층, 감사 |
@@ -109,7 +109,7 @@ stateDiagram-v2
     WAITING_CONFIRMATION --> EXECUTING: user confirmed
     WAITING_CONFIRMATION --> [*]: user cancels or expires
     INPUT_VALIDATED --> EXECUTING: sidebar submit
-    [*] --> EXECUTING: initial_default (강남역·3 km·급속/완속)
+    [*] --> EXECUTING: initial_default (강남역·직경 1 km·급속/완속)
     EXECUTING --> CRITIC_REVIEW: normalized results ready
     CRITIC_REVIEW --> EXECUTING: RETRY_REQUEST and retry remains
     CRITIC_REVIEW --> COMPLETED: PASS
@@ -123,14 +123,15 @@ stateDiagram-v2
 
 1. Gateway가 세션 식별, 요청 제한, 인젝션·스키마 검사를 하고 `request_id`를 만든다.
 2. Planner가 자연어를 `SearchRequestDraft`로 구조화한다. 조건이 부족하면 질문만 돌려준다.
-3. 위치명이 모호하면 Executor가 카카오 장소 후보만 조회해 서울 범위의 상위 2개를 이름·유형·주소와 함께 반환한다. 예를 들어 `서울`이면 1순위 서울시청을 `서울시청 주변 3 km에서 급속·완속 충전소를 찾을까요?`라고 제안한다. 이 단계에서는 환경공단 충전기 상태를 호출하지 않는다.
+3. 위치명이 모호하면 Executor가 카카오 장소 후보만 조회해 서울 범위의 상위 2개를 이름·유형·주소와 함께 반환한다. 예를 들어 `서울`이면 1순위 서울시청을 `서울시청 주변 직경 1 km에서 급속·완속 충전소를 찾을까요?`라고 제안한다. 이 단계에서는 환경공단 충전기 상태를 호출하지 않는다.
 4. UI가 지역·중심·반경·충전기 타입을 조건 카드로 보여 준다. 사용자가 1순위를 수락하거나 다른 후보를 지정한 뒤 조건을 확인하면 Gateway가 `user_confirmed=true`를 기록한다.
 5. Orchestrator가 실행 계획을 고정하고 Executor → Critic을 진행한다.
 6. 결과 또는 안전 응답은 출력 가드레일을 통과한 뒤 UI에 보인다.
+7. 다음 채팅이 장소 없는 조건 변경이면 Memory Keeper의 마지막 확정 장소·직경·타입 요약만 Planner에 제공한다. 서비스 키·세션 토큰·원문 대화는 제공하지 않는다.
 
 ### 4.2 사이드바 직접 검색
 
-사이드바의 지역, 지도 중심, 충전기 타입, 1/3/5 km 반경은 Gateway가 같은 계약으로 재검증한다. `origin="sidebar"`, `user_confirmed=true`로 즉시 Orchestrator에 진입한다. Planner는 거치지 않지만 이후의 Executor·Critic·Memory Keeper·출력 경로는 채팅과 같다. 첫 진입은 `origin="initial_default"`로 강남역 주변 3 km와 급속·완속 전체를 즉시 실행하며, 사용자는 결과 상단에서 조건을 수정할 수 있다.
+사이드바의 지역, 지도 중심, 충전기 타입, 직경 1/2/3 km(반경 0.5/1.0/1.5 km)는 Gateway가 같은 계약으로 재검증한다. `origin="sidebar"`, `user_confirmed=true`로 즉시 Orchestrator에 진입한다. Planner는 거치지 않지만 이후의 Executor·Critic·Memory Keeper·출력 경로는 채팅과 같다. 첫 진입은 `origin="initial_default"`로 강남역 주변 직경 1 km와 급속·완속 전체를 즉시 실행하며, 사용자는 결과 상단에서 조건을 수정할 수 있다.
 
 ### 4.3 중복·취소
 
