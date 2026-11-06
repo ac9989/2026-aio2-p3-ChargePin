@@ -1,6 +1,6 @@
 # ChargePin 1.0 초기 구현
 
-확정된 `docs/PRD_1.0.md`와 `docs/P3-1_Architecture_Design_1.0.md`를 기준으로 만든 초기 실행 버전이다. 팀원이 만든 기존 Streamlit 시연 화면의 따뜻한 노랑·우드 톤, 카드형 검색 패널, 큰 지도, 운영 대시보드 구성을 새 아키텍처에 맞춰 재구성했다.
+현재 개발 중인 ChargePin 초기 실행 버전이다. 기능 요구사항은 `docs/PRD.md`를 참고한다. 팀원이 만든 기존 Streamlit 시연 화면의 따뜻한 노랑·우드 톤, 카드형 검색 패널, 큰 지도, 운영 대시보드 구성을 새 아키텍처에 맞춰 재구성했다.
 
 ## 구성
 
@@ -45,7 +45,7 @@ docker compose up --build
 - 백엔드 문서: `http://localhost:8000/docs`
 - 상태 확인: `http://localhost:8000/healthz`
 
-`.env`는 `aio2_p3_ChargePin/.env`에 둔다. 실제 키는 커밋하지 않으며, 처음에는 `.env.example`을 복사해 사용한다. `KECO_SERVICE_KEY`에는 데이터셋 `15076352`의 활용 신청이 완료된 공공데이터포털 서비스키를, `KAKAO_REST_API_KEY`에는 카카오 REST API 키를 넣는다. 지도까지 실제로 보려면 `KAKAO_JAVASCRIPT_KEY`와 카카오 콘솔 Web 플랫폼의 `http://127.0.0.1:8501` 등록이 필요하다. `localhost`로 접속할 때는 `http://localhost:8501`도 별도로 등록한다.
+`.env`는 프로젝트 최상위 폴더에 둔다. 실제 키는 커밋하지 않으며, 처음에는 `.env.example`을 복사해 사용한다. `KECO_SERVICE_KEY`에는 데이터셋 `15076352`의 활용 신청이 완료된 공공데이터포털 서비스키를, `KAKAO_REST_API_KEY`에는 카카오 REST API 키를 넣는다. 지도까지 실제로 보려면 `KAKAO_JAVASCRIPT_KEY`와 카카오 콘솔 Web 플랫폼의 `http://127.0.0.1:8501` 등록이 필요하다. `localhost`로 접속할 때는 `http://localhost:8501`도 별도로 등록한다.
 
 첫 화면에서는 `.env`의 `CUSTOMER_SERVICE_KEY`, `LOW_MANAGER_SERVICE_KEY`, `HIGH_MANAGER_SERVICE_KEY` 중 하나를 입력한다. 백엔드가 키를 비교해 짧은 역할 세션을 발급하며, 서비스 키·환경공단 키·카카오 REST 키는 프런트 컨테이너에 전달하지 않는다.
 

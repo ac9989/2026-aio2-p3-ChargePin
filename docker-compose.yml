@@ -7,7 +7,13 @@ services:
     env_file:
       - .env
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')",
+        ]
       interval: 15s
       timeout: 3s
       retries: 3
@@ -17,10 +23,22 @@ services:
       context: ./Frontend
     environment:
       CHARGEPIN_API_BASE_URL: ${CHARGEPIN_API_BASE_URL_DOCKER:-http://backend:8000/api/v1}
-      # Only the browser-safe JavaScript map key reaches the frontend container.
+      # 브라우저에서 사용하는 카카오 JavaScript 키만 프론트 컨테이너에 전달
       KAKAO_JAVASCRIPT_KEY: ${KAKAO_JAVASCRIPT_KEY:-}
     ports:
       - "8501:8501"
     depends_on:
       backend:
         condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=3)",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
