@@ -53,8 +53,6 @@ def event_time(value: Any) -> datetime | None:
 
 
 def event_state(event: dict[str, Any]) -> str:
-    if event.get("guardrail_blocked"):
-        return "차단"
     if event.get("outcome") == "error":
         return "실패"
     if event.get("search_status") == "degraded":
@@ -96,7 +94,6 @@ def summarize_events(events: list[dict[str, Any]]) -> dict[str, Any]:
         "search_count": len(searches),
         "partial_count": sum(item["state"] == "부분 응답" for item in searches),
         "failure_count": sum(item["state"] == "실패" for item in searches),
-        "guardrail_block_count": sum(item["state"] == "차단" for item in observed),
         "average_ms": round(mean(valid_durations)) if valid_durations else None,
         "minute_counts": [{"time": key.isoformat(), "count": value} for key, value in sorted(minute_counts.items())],
         "kind_counts": [{"kind": key, "count": kind_counts[key]} for key in

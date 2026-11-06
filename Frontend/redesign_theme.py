@@ -266,5 +266,165 @@ REDESIGN_STYLES = """
  .cp-summary-panel{padding:20px}.cp-summary-fields{gap:10px}.cp-summary-field{padding:0 10px}
  .cp-summary-field strong{font-size:19px}
 }
+
+/* Shared, readable brand and understated action buttons without moving the header. */
+.st-key-common_header .cp-brand-copy .brand-name{font-size:25px!important;line-height:1.3!important}
+.st-key-common_header .cp-brand-copy .brand-sub{font-size:14px!important;line-height:1.4!important}
+.st-key-dashboard_header .st-key-user_brand{flex-basis:510px!important;width:510px!important;min-width:510px!important;max-width:510px!important}
+.st-key-common_header :is(.st-key-header_settings,.st-key-header_power) button{
+ border-radius:14px!important;border:1px solid #e3e7eb!important;background:#f7f8f9!important;color:#34404a!important;box-shadow:none!important;
+}
+.st-key-common_header :is(.st-key-header_settings,.st-key-header_power) button:hover{background:#e9edf0!important;border-color:#d7dde2!important}
+.st-key-dashboard_header .st-key-common_header :is(.st-key-header_settings,.st-key-header_power) button{background:#323a43!important;border-color:#48515a!important;color:#f6f8fa!important}
+.st-key-dashboard_header .st-key-common_header :is(.st-key-header_settings,.st-key-header_power) button:hover{background:#454e58!important}
+
+/* Keep chat actions grouped inside its own header. */
+.st-key-chat_header{align-items:center!important;flex-wrap:nowrap!important;gap:8px!important;width:100%!important}
+.st-key-chat_header :is(.st-key-chat_expand,.st-key-chat_collapse){flex:0 0 36px!important;width:36px!important;min-width:36px!important;max-width:36px!important}
+.st-key-chat_header :is(.st-key-chat_expand,.st-key-chat_collapse) button{
+ width:36px!important;min-width:36px!important;max-width:36px!important;height:36px!important;min-height:36px!important;max-height:36px!important;
+ display:flex!important;align-items:center!important;justify-content:center!important;border:1px solid #e1e6ea!important;
+ border-radius:10px!important;background:#f7f8f9!important;color:#596773!important;padding:0!important;box-shadow:none!important;
+}
+.st-key-chat_header :is(.st-key-chat_expand,.st-key-chat_collapse) button:hover{background:#e9edf0!important;color:#252c33!important}
+.st-key-chat_header :is(.st-key-chat_expand,.st-key-chat_collapse) button p{display:block!important;position:absolute!important;width:1px!important;height:1px!important;overflow:hidden!important;clip-path:inset(50%)!important}
+.st-key-chat_header :is(.st-key-chat_expand,.st-key-chat_collapse) button [data-testid="stIconMaterial"]{font-size:19px!important}
+
+/* A zero-layout-size script host stays mounted while the sidebar is collapsed. */
+.st-key-capture_listener,[data-testid="stVerticalBlockBorderWrapper"]:has(> .st-key-capture_listener){display:none!important}
+
+/* Entry image is cropped without distorting the car or changing the access form. */
+.st-key-login_layout{max-width:1080px!important;margin:clamp(24px,6vh,72px) auto 32px!important}
+.st-key-login_visual [data-testid="stImage"] img{width:100%!important;height:min(600px,68vh)!important;min-height:390px;object-fit:cover;object-position:center 62%;border-radius:20px;display:block}
+.st-key-login_layout .st-key-login-form{max-width:480px!important}
+@media(max-width:1420px){
+ .st-key-dashboard_header .st-key-user_brand{flex:1 1 0%!important;width:auto!important;min-width:0!important;max-width:none!important}
+}
+@media(max-width:700px){
+ .st-key-common_header .cp-brand-copy .brand-name{font-size:21px!important}
+ .st-key-common_header .cp-brand-copy .brand-sub{font-size:13px!important;white-space:normal}
+ .st-key-login_layout{margin:12px auto 24px!important}
+ .st-key-login_visual [data-testid="stImage"] img{height:260px!important;min-height:0;object-position:center 65%}
+}
+
+
+/* Refined cards and readable spacing */
+.st-key-operations_content {gap:22px!important;}
+.st-key-operations_content [data-testid="stVerticalBlock"][data-border="true"] {box-sizing:border-box!important;border-radius:18px!important;border-color:#e3e8ef!important;box-shadow:0 8px 28px #25364c0b!important;padding:20px!important;}
+.cp-metric {border-radius:18px!important;min-height:128px!important;padding:22px!important;box-shadow:0 8px 25px #2634470b!important;}
+.cp-metric-icon {background:#fff5d9!important;border:1px solid #f5e6bd!important;}
+.cp-chart-empty {color:#8190a1!important;background:#f8fafc!important;border-radius:14px!important;}
+.cp-pipeline-step {border-radius:12px!important;background:#f8fafc!important;}
+.cp-result-chip.speed {background:#eaf3ff;color:#3b6798}.cp-result-chip.distance {background:#f0ecfb;color:#705a99}
+.cp-result-chip.ok {background:#e4f5ed;color:#24785b}.cp-result-chip.warn {background:#fff2d9;color:#8b6819}
+.cp-chat-title {display:flex;align-items:center;gap:8px;line-height:1.3!important}.cp-chat-title span {margin:0!important;flex:none;display:grid!important;place-items:center!important;line-height:1!important}
+.cp-search-space {height:10px}
+.st-key-search_controls [data-testid="stTextInput"] {margin-bottom:12px}
+
+
+.st-key-common_header .cp-brand-copy .brand-name{font-size:27px!important}
+.st-key-common_header .cp-brand-copy .brand-sub{font-size:15px!important}
+@media(max-width:700px){.st-key-common_header .cp-brand-copy .brand-name{font-size:20px!important}.st-key-common_header .cp-brand-copy .brand-sub{font-size:12px!important}}
+
+
+.st-key-header_navigation .st-key-dashboard_navigation [data-testid="stRadioOption"] p {font-size:17px!important;line-height:1.45!important}
+@media(max-width:700px){.st-key-header_navigation .st-key-dashboard_navigation [data-testid="stRadioOption"] p {font-size:15px!important}}
+
+/* Center the chat controls independently of Streamlit icon spacing. */
+:is(.st-key-chat_expand,.st-key-chat_collapse) button {display:flex!important;align-items:center!important;justify-content:center!important;gap:0!important}
+:is(.st-key-chat_expand,.st-key-chat_collapse) button [data-testid="stIconMaterial"] {margin:0!important;display:block!important;line-height:1!important}
+
+/* Align the shared brand text with the center of the lightning icon. */
+.st-key-common_header .st-key-user_brand {align-items:center!important}
+.st-key-common_header .cp-brand-copy {position:relative;top:-6px;align-items:center!important}
+.st-key-common_header .cp-brand-copy .brand-name,.st-key-common_header .cp-brand-copy .brand-sub {margin:0!important}
+
+/* Compact dashboard toolbar and permission summary. */
+.st-key-dashboard_toolbar{display:flex!important;justify-content:flex-end!important;align-items:center!important;gap:12px!important;flex-wrap:wrap!important;margin:10px 0 24px!important}
+.st-key-dashboard_period_control{align-items:center!important;gap:10px!important}
+.cp-toolbar-label{font-size:13px;font-weight:650;color:#677482;white-space:nowrap}
+.st-key-dashboard_period [data-testid="stRadioGroup"]{display:flex;gap:4px!important;flex-wrap:nowrap!important;background:#f2f4f6;border-radius:10px;padding:4px}
+.st-key-dashboard_period [data-testid="stRadioOption"]{padding:6px 10px!important;border-radius:7px;white-space:nowrap}
+.st-key-dashboard_period [data-testid="stRadioOption"] > div:first-child{display:none!important}
+.st-key-dashboard_period [data-testid="stRadioOption"]:has(input:checked){background:white;box-shadow:0 1px 4px #25364c1b}
+.st-key-dashboard_period [data-testid="stRadioOption"] p{font-size:13px!important;color:#536170!important}
+.st-key-dashboard_refresh button{min-height:36px!important;border:1px solid #dce3e9!important;border-radius:10px!important;background:#fff!important;padding:6px 12px!important}
+.cp-dashboard-updated{white-space:nowrap;font-size:12px;color:#7b8794}.cp-dashboard-updated b{color:#475766;font-weight:650}
+.cp-role-list{display:grid;gap:9px;margin-top:12px}.cp-role-item{display:flex;align-items:center;gap:14px;padding:14px 16px;background:#f7f9fb;border:1px solid #e8edf1;border-radius:13px}.cp-role-symbol{display:grid;place-items:center;flex:none;width:36px;height:36px;border-radius:11px;background:#fff3d5;color:#9c741b;font-size:12px;font-weight:750}.cp-role-item strong{display:block;font-size:15px;color:#26313c}.cp-role-item p{margin:4px 0 0;color:#667687;font-size:13px;line-height:1.5}.cp-role-note{margin-top:14px;color:#8794a1;font-size:12px;line-height:1.5}
+.cp-chart-empty{box-sizing:border-box!important;padding:24px!important;margin-top:12px!important;min-height:130px!important}
+@media(max-width:700px){.st-key-dashboard_toolbar{justify-content:flex-start!important}.cp-dashboard-updated{text-align:left!important}}
+
+/* Clear, spacious dashboard rows and quiet empty states. */
+.st-key-operations_content{padding:8px 0 32px!important}
+:is(.st-key-flow_kpis,.st-key-system_kpis,.st-key-pipeline_kpis){margin:20px 0 30px!important}
+:is(.st-key-flow_charts,.st-key-flow_details,.st-key-system_charts,.st-key-system_details,.st-key-pipeline_details,.st-key-pipeline_flow){margin:0 0 28px!important}
+:is(.st-key-flow_kpis,.st-key-system_kpis,.st-key-pipeline_kpis,.st-key-flow_charts,.st-key-flow_details,.st-key-system_charts,.st-key-system_details,.st-key-pipeline_details) [data-testid="stHorizontalBlock"]{gap:20px!important;align-items:stretch!important}
+.st-key-operations_content [data-testid="stVerticalBlock"][data-border="true"]{padding:24px!important;gap:14px!important;overflow:visible!important;min-height:170px}
+.cp-metric{min-height:142px!important;padding:24px!important;border-radius:18px!important;box-shadow:0 5px 20px #2736450b!important}
+.cp-metric-value{margin:12px 0 10px!important;font-size:29px!important}
+.cp-section-title{margin-bottom:8px;gap:16px}.cp-section-title h3{font-size:18px!important}.cp-section-note{font-size:12px!important}
+.cp-chart-empty{background:transparent!important;margin:0!important;min-height:132px!important;padding:18px!important;color:#84919d!important}
+.cp-empty-icon{background:#f6f8fa;border:0!important;color:#9daab5!important}
+.st-key-overview_axis{margin:18px 0 24px!important}.st-key-overview_axis [data-testid="stRadioGroup"]{gap:20px!important}
+.st-key-overview_axis [data-testid="stRadioOption"]{min-height:72px!important;align-items:center!important;padding:18px 22px!important;border-radius:16px!important}
+.cp-summary-panel{margin:0 0 26px!important;padding:28px!important;border-radius:18px!important}.cp-summary-fields{margin-top:24px!important}.cp-summary-note{margin-top:24px!important}
+.cp-provider-row{padding:13px 0!important}.cp-pipeline{gap:10px!important}.cp-pipeline-step{padding:14px!important}
+@media(max-width:700px){.st-key-operations_content [data-testid="stVerticalBlock"][data-border="true"]{padding:18px!important}.cp-metric{min-height:112px!important;padding:18px!important}.st-key-overview_axis [data-testid="stRadioOption"]{min-height:60px!important}.cp-summary-panel{padding:20px!important}}
+/* Subtle neumorphic treatment for existing icon controls. */
+.brand-bolt, .st-key-status_bolt button[data-testid="stPopoverButton"], .cp-chat-title span {
+    background:linear-gradient(145deg,#30363e,#242930)!important;
+    box-shadow:inset 1px 1px 2px #ffffff18,inset -1px -1px 2px #10141955,0 2px 5px #1d29321c!important;
+}
+:is(.st-key-header_settings,.st-key-header_power) button,
+.st-key-chat_header :is(.st-key-chat_expand,.st-key-chat_collapse) button {
+    background:linear-gradient(145deg,#fafbfc,#eef1f4)!important;
+    border:1px solid #dbe2e8!important;
+    box-shadow:2px 2px 5px #cbd2d866,-2px -2px 5px #ffffffcc!important;
+    transition:box-shadow .15s ease,background .15s ease!important;
+}
+[data-testid="stMain"]:has(.dashboard-marker) :is(.st-key-header_settings,.st-key-header_power) button {
+    background:linear-gradient(145deg,#424a53,#333b44)!important;
+    border-color:#606b76!important;
+    box-shadow:2px 2px 5px #15191e80,-1px -1px 3px #ffffff12!important;
+    color:#fff!important;
+}
+:is(.st-key-header_settings,.st-key-header_power,.st-key-chat_expand,.st-key-chat_collapse) button:active {
+    box-shadow:inset 2px 2px 4px #9ba7b54d,inset -2px -2px 4px #ffffff80!important;
+}
+
+/* Page title and dashboard controls share one responsive row. */
+.st-key-dashboard_page_heading{align-items:center!important;justify-content:space-between!important;gap:24px!important;margin:12px 0 22px!important;flex-wrap:wrap!important}
+.st-key-dashboard_heading_title{flex:1 1 260px!important;min-width:220px!important}
+.st-key-dashboard_toolbar{flex:0 1 auto!important;width:auto!important;justify-content:flex-end!important;margin:0!important;gap:10px!important}
+.st-key-dashboard_period_control{flex:0 0 auto!important;width:auto!important}
+.st-key-operations_content{padding-top:0!important}
+.st-key-overview_axis{margin:0 0 32px!important}
+.st-key-overview_axis [data-testid="stRadioOption"]{min-height:66px!important}
+@media(max-width:900px){.st-key-dashboard_page_heading{gap:12px!important}.st-key-dashboard_toolbar{justify-content:flex-start!important;flex-wrap:wrap!important}}
+
+/* Align the page title and compact controls on the same Streamlit row. */
+.st-key-dashboard_page_heading{margin:0 0 14px!important;overflow:visible!important}
+.st-key-dashboard_page_heading [data-testid="stHorizontalBlock"]{align-items:center!important;gap:12px!important}
+.st-key-dashboard_page_heading [data-testid="stColumn"]{min-width:0!important}
+.st-key-dashboard_toolbar{margin:0!important;gap:8px!important;justify-content:flex-end!important;align-items:center!important}
+.st-key-dashboard_period_control{gap:8px!important;align-items:center!important}
+.st-key-dashboard_page_heading .cp-dashboard-title{margin:0!important}
+.st-key-dashboard_page_heading .cp-dashboard-subtitle{display:block!important;margin:5px 0 0 17px!important;line-height:1.5!important;overflow:visible!important}
+.st-key-overview_axis{margin:0 0 22px!important}
+@media(max-width:900px){.st-key-dashboard_toolbar{justify-content:flex-start!important}}
+
+/* Keep the permissions action legible against the dark dashboard header. */
+.st-key-dashboard_header .st-key-menu_roles button{min-height:44px!important;padding:0 14px!important;display:flex!important;align-items:center!important;justify-content:center!important;gap:7px!important;background:#323a43!important;border:1px solid #59616a!important;border-radius:12px!important;color:#f6f8fa!important;opacity:1!important}
+.st-key-dashboard_header .st-key-menu_roles button p,.st-key-dashboard_header .st-key-menu_roles button [data-testid="stIconMaterial"]{color:#f6f8fa!important;opacity:1!important}
+.st-key-dashboard_header .st-key-menu_roles button:hover{background:#454e58!important;border-color:#77818c!important}
+/* Pin the icon glyph to the actual center of each chat button. */
+.st-key-chat_header :is(.st-key-chat_expand,.st-key-chat_collapse) button { position:relative!important; }
+.st-key-chat_header :is(.st-key-chat_expand,.st-key-chat_collapse) button [data-has-shortcut] { position:static!important; }
+.st-key-chat_header :is(.st-key-chat_expand,.st-key-chat_collapse) button [data-testid="stIconMaterial"] {
+ position:absolute!important; left:50%!important; top:50%!important; transform:translate(-50%,-50%)!important;
+ width:20px!important; height:20px!important; display:grid!important; place-items:center!important; line-height:1!important; margin:0!important;
+}
+.cp-reference-link { display:inline-flex; align-items:center; position:relative; z-index:2; pointer-events:auto; min-height:36px; padding:0 12px; border:1px solid #d5dce3; border-radius:10px; background:#fff; color:#29343e!important; text-decoration:none!important; font-size:13px; }
+.cp-reference-link:hover { background:#f1f4f6; border-color:#aebac5; }
 </style>
 """

@@ -4,7 +4,9 @@ from __future__ import annotations
 from pathlib import Path
 from html import escape
 import json
+from math import asin, cos, radians, sin, sqrt
 import os
+import re
 from typing import Any
 
 import streamlit as st
@@ -359,8 +361,8 @@ MAP_CSS = """
 def init_state() -> None:
     defaults: dict[str, Any] = {
         "role": None, "auth_token": None, "view": "search", "mode": "탐색", "results": [], "request": None,
-        "chat": [{"role": "assistant", "content": "안녕하세요, 차지핀이에요. 찾고 싶은 서울 충전 장소와 조건을 말씀해 주세요."}],
-        "pending_plan": None, "notice": None, "booted": False, "place_query": "",
+        "chat": [{"role": "assistant", "content": "안녕하세요, 차지핀이에요. 서울의 충전할 장소를 말씀해 주세요. (기본 설정 반경 0.5km)"}],
+        "pending_plan": None, "notice": None, "quality_notices": [], "booted": False, "place_query": "",
         "place_suggestions": [], "suggestion_query": "", "suggestion_error": None, "selected_place": None,
     }
     for key, value in defaults.items():
@@ -380,8 +382,9 @@ def set_search_response(payload: dict[str, Any]) -> None:
     st.session_state.selected_station_id = None
     st.session_state.request = payload.get("applied_request")
     st.session_state.pending_plan = None
-    findings = payload.get("critic_findings", [])
-    st.session_state.notice = " · ".join(str(item) for item in findings) if findings else None
+    findings = payload.get("critic_findings") or []
+    st.session_state.quality_notices = [str(item) for item in findings if item]
+    st.session_state.notice = None
 
 
 def access_token() -> str:
@@ -402,32 +405,38 @@ def role_dialog(title: str, body: str) -> None:
     @st.dialog(title)
     def _dialog() -> None:
         st.write(body)
-        st.button("확인", use_container_width=True)
+        if st.button("확인", use_container_width=True):
+            st.rerun()
     _dialog()
 
 
 def render_login() -> None:
-    _, center, _ = st.columns([2, 3, 2])
-    with center:
-        st.markdown('<div class="brand-row"><div class="brand-bolt">⚡</div><div><div class="brand-name">ChargePin</div><div class="brand-sub">서울 전기차 충전소 안내</div></div></div>', unsafe_allow_html=True)
-        st.markdown("<br>", unsafe_allow_html=True)
-        with st.form("login-form", clear_on_submit=True):
-            st.markdown("### 차지핀 시작하기")
-            service_key = st.text_input("접속 코드", type="password", placeholder="접속 코드를 입력해주세요", label_visibility="collapsed")
-            submitted = st.form_submit_button("접속하기", type="primary", use_container_width=True)
-        if submitted:
-            if not service_key.strip():
-                st.warning("접속 코드를 입력해주세요.")
-                return
-            try:
-                session = API.login(service_key)
-                st.session_state.auth_token = session["access_token"]
-                st.session_state.role = ROLE_LABELS.get(session["role"], "손님")
-                st.session_state.booted = False
-                st.session_state.notice = None
-                st.rerun()
-            except ApiError as error:
-                st.error(error.message)
+    with st.container(key="login_layout"):
+        visual, center = st.columns([1.06, 1], vertical_alignment="center", gap="large")
+        with visual:
+            with st.container(key="login_visual"):
+                st.image(str(Path(__file__).resolve().parent / "static" / "chargepin-entry-car.png"),
+                         caption=None, width="stretch")
+        with center:
+            st.markdown('<div class="brand-row"><div class="brand-bolt">⚡</div><div><div class="brand-name">ChargePin</div><div class="brand-sub">서울 전기차 충전소 안내</div></div></div>', unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
+            with st.form("login-form", clear_on_submit=True):
+                st.markdown("### 차지핀 시작하기")
+                service_key = st.text_input("접속 코드", type="password", placeholder="접속 코드를 입력해주세요", label_visibility="collapsed")
+                submitted = st.form_submit_button("접속하기", type="primary", use_container_width=True)
+            if submitted:
+                if not service_key.strip():
+                    st.warning("접속 코드를 입력해주세요.")
+                    return
+                try:
+                    session = API.login(service_key)
+                    st.session_state.auth_token = session["access_token"]
+                    st.session_state.role = ROLE_LABELS.get(session["role"], "손님")
+                    st.session_state.booted = False
+                    st.session_state.notice = None
+                    st.rerun()
+                except ApiError as error:
+                    st.error(error.message)
 
 
 def logout() -> None:
@@ -464,12 +473,7 @@ def map_html(results: list[dict[str, Any]], request: dict[str, Any] | None) -> s
     condition_badge = ""
     if request:
         selected_types = "·".join("급속" if value == "FAST" else "완속" for value in request.get("connector_types", []))
-        try:
-            radius = float(request.get("radius_km", 0.5))
-            range_text = f"검색 범위 {radius * 2:g} km (반경 {radius:g} km)"
-        except (TypeError, ValueError):
-            range_text = "검색 범위 확인 필요"
-        condition_badge = '<div class="map-conditions">' + escape(range_text) + ' · ' + escape(selected_types or "전체 타입") + '</div>'
+        condition_badge = '<div class="map-conditions">반경 ' + escape(str(request.get("radius_km", 3))) + ' km · ' + escape(selected_types or "전체 타입") + '</div>'
     applied = request or {}
     center = applied.get("center", {})
     source = center.get("source", "")
@@ -532,7 +536,7 @@ def render_station_cards(results: list[dict[str, Any]]) -> None:
                 parking = station.get("parking_free")
                 parking_text = "무료 주차" if parking is True else "무료 주차 아님" if parking is False else "주차 확인 필요"
                 access_text = "외부인 " + outsider_access(station)
-                chips = [(types, ""), (distance_text, ""), (parking_text, ""), (access_text, ""),
+                chips = [(types, "speed"), (distance_text, "distance"), (parking_text, "ok" if parking is True else "warn"), (access_text, "ok" if outsider_access(station) == "가능" else "warn"),
                          (availability_label(station), tone)]
                 st.markdown('<div class="cp-result-meta">' + "".join(
                     '<span class="cp-result-chip ' + escape(tone_name) + '">' + escape(str(text)) + '</span>'
@@ -556,7 +560,7 @@ def choose_sidebar_place(candidate: dict[str, Any]) -> None:
     st.session_state.suggestion_error = None
 
 
-def search_payload(place: dict[str, Any], radius: float, connector_labels: list[str]) -> dict[str, Any]:
+def search_payload(place: dict[str, Any], radius: int, connector_labels: list[str]) -> dict[str, Any]:
     location = place["location"]
     region_filters = [f"zscode:{place['district_code']}"] if place.get("district_code") else []
     return {
@@ -599,7 +603,7 @@ def filter_exploration_results(results: list[dict[str, Any]], facilities: list[s
         if is_residential_station(item):
             continue
         facility = str(item.get("facility_type") or "")
-        if facilities and not any(any(word in facility for word in FACILITY_GROUPS[group]) for group in facilities):
+        if facilities and set(facilities) != set(FACILITY_GROUPS) and not any(any(word in facility for word in FACILITY_GROUPS[group]) for group in facilities):
             continue
         if access != "전체" and outsider_access(item) != access:
             continue
@@ -614,8 +618,29 @@ def filter_exploration_results(results: list[dict[str, Any]], facilities: list[s
     return filtered
 
 
+def apply_search_radius(payload: dict[str, Any], center: dict[str, Any], radius_km: float) -> dict[str, Any]:
+    """Apply exact client radius after querying a supported enclosing server radius."""
+    filtered = []
+    lat, lng = radians(float(center["lat"])), radians(float(center["lng"]))
+    for item in payload.get("results", []):
+        location = item.get("location") or {}
+        try:
+            other_lat, other_lng = radians(float(location["lat"])), radians(float(location["lng"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+        arc = sin((other_lat - lat) / 2) ** 2 + cos(lat) * cos(other_lat) * sin((other_lng - lng) / 2) ** 2
+        distance = 6371.0088 * 2 * asin(sqrt(min(1.0, max(0.0, arc))))
+        if distance <= radius_km:
+            filtered.append(dict(item, distance_km=round(distance, 2)))
+    applied = dict(payload.get("applied_request") or {})
+    applied["server_radius_km"] = applied.get("radius_km")
+    applied["radius_km"] = radius_km
+    return dict(payload, results=sorted(filtered, key=lambda item: item["distance_km"]), applied_request=applied)
+
+
 def render_direct_search() -> None:
-    st.markdown('<div class="cp-search-title">충전소 찾기</div><div class="cp-search-sub">원하는 장소 주변을 탐색해 보세요</div>', unsafe_allow_html=True)
+    st.markdown('<div class="cp-search-title">충전소 찾기</div>', unsafe_allow_html=True)
+    st.markdown('<div class="cp-search-space"></div>', unsafe_allow_html=True)
     query = st.text_input("장소검색", placeholder="장소명 입력 (예: 강남역, 서울시청)", key="place_query")
     normalized_query = query.strip()
     if normalized_query != st.session_state.suggestion_query:
@@ -643,37 +668,58 @@ def render_direct_search() -> None:
     speed = st.radio("충전 속도", ["전체", "급속", "완속"], horizontal=True, key="charging_speed")
     connector_labels = ["급속", "완속"] if speed == "전체" else [speed]
     with st.expander("상세 조건", expanded=False):
-        st.multiselect("충전소 분류", list(FACILITY_GROUPS), key="facility_groups",
+        st.multiselect("충전소 분류", list(FACILITY_GROUPS), default=list(FACILITY_GROUPS), key="facility_groups",
                        placeholder="전체 장소", help="분류가 확인된 결과만 표시합니다. 주거용 아파트는 제외합니다.")
         st.radio("외부인 이용", ["전체", "가능", "불가", "확인 필요"], horizontal=True, key="outsider_filter")
         st.radio("주차 요금", ["전체", "무료", "무료 아님", "확인 필요"], horizontal=True, key="parking_filter",
                  help="충전 요금과 별도입니다. 무료가 아닌 경우 실제 금액은 확인이 필요합니다.")
-        diameter = st.radio("검색 범위 (지름)", [1, 2, 3], horizontal=True,
+        diameter = st.radio("검색 범위", [1, 2, 3], horizontal=True,
                             format_func=lambda value: f"{value} km", key="search_diameter",
-                            help="표시된 검색 범위는 지름입니다. 1·2·3 km는 각각 반경 0.5·1.0·1.5 km로 검색합니다.")
-    if st.button("충전소 검색", type="primary", use_container_width=True):
+                            help="선택한 범위의 중심에서 각각 0.5·1·1.5km 이내를 검색합니다.")
+    search_col, refresh_col = st.columns([5, 1], vertical_alignment="bottom")
+    with search_col:
+        search_clicked = st.button("충전소 검색", type="primary", use_container_width=True)
+    with refresh_col:
+        refresh_clicked = st.button("↻", help="충전소 다시 검색", use_container_width=True)
+    if search_clicked or refresh_clicked:
         if selected_place is None:
             st.warning("장소명을 입력한 뒤 카카오 장소 후보를 선택해 주세요.")
             return
         radius = diameter / 2
         try:
-            response = API.search(search_payload(selected_place, radius, connector_labels), access_token())
-            set_search_response(response)
+            server_radius = 1 if radius <= 1 else 3
+            response = API.search(search_payload(selected_place, server_radius, connector_labels), access_token())
+            set_search_response(apply_search_radius(response, selected_place["location"], radius))
             st.rerun()
         except ApiError as error:
             st.error(error.message)
 
 
-def complete_chat_search(plan: dict[str, Any], candidate_id: str | None = None) -> None:
-    candidate_id = candidate_id or plan.get("suggested_candidate_id")
+def complete_chat_search(plan: dict[str, Any]) -> None:
+    candidate_id = plan.get("suggested_candidate_id")
     candidates = plan.get("candidates", [])
     if plan.get("status") == "AWAITING_LOCATION_CONFIRMATION" and not candidate_id:
-        raise ApiError("장소 후보를 하나 선택해 주세요.")
+        candidate_id = candidates[0]["candidate_id"] if candidates else None
+        if not candidate_id:
+            st.session_state.pending_plan = None
+            st.session_state.chat.append({"role": "assistant", "content": "검색할 장소를 찾지 못했어요. 역 이름이나 주소를 알려주세요."})
+            return
     st.session_state.pending_plan = None
     response = API.confirm(plan["request_id"], access_token(), candidate_id)
+    last_message = next((str(item.get("content", "")) for item in reversed(st.session_state.chat)
+                         if item.get("role") == "user"), "")
+    explicit_distance = re.search(r"\d+(?:\.\d+)?\s*(?:km|킬로미터|킬로|키로|미터|m\b)", last_message, re.IGNORECASE)
+    applied = response.get("applied_request") or {}
+    center = applied.get("center") or {}
+    try:
+        server_radius = float(applied.get("radius_km", 0))
+    except (TypeError, ValueError):
+        server_radius = 0
+    if not explicit_distance and server_radius > 0.5 and "lat" in center and "lng" in center:
+        response = apply_search_radius(response, center, 0.5)
     set_search_response(response)
     selected = next((item for item in candidates if item["candidate_id"] == candidate_id), None)
-    location = f"{selected['name']} 주변" if selected else "선택한 장소 주변"
+    location = f"{selected['name']} 주변" if selected else "입력한 지역 주변"
     count = len(st.session_state.results)
     if response.get("status") == "degraded":
         findings = response.get("critic_findings") or []
@@ -687,40 +733,6 @@ def complete_chat_search(plan: dict[str, Any], candidate_id: str | None = None) 
     st.session_state.chat.append({"role": "assistant", "content": message})
 
 
-def render_chat_confirmation(plan: dict[str, Any]) -> None:
-    """Show the Planner draft and wait for an explicit user decision."""
-    st.info(str(plan.get("message") or "검색 조건을 확인해 주세요."))
-    status = plan.get("status")
-    candidates = plan.get("candidates") or []
-    if status == "AWAITING_LOCATION_CONFIRMATION":
-        st.caption("카카오 장소 후보입니다. 검색할 장소를 선택해 주세요.")
-        for index, candidate in enumerate(candidates):
-            suffix = " · 추천" if candidate.get("candidate_id") == plan.get("suggested_candidate_id") else ""
-            label = f"{candidate.get('name', '장소')} · {candidate.get('address', '주소 확인 필요')}{suffix}"
-            if st.button(label, key=f"chat_candidate_{plan['request_id']}_{index}", use_container_width=True):
-                try:
-                    complete_chat_search(plan, str(candidate.get("candidate_id") or ""))
-                    st.session_state.reset_search_filters = True
-                    st.rerun()
-                except ApiError as error:
-                    st.error(error.message)
-    else:
-        confirm, retry = st.columns(2)
-        with confirm:
-            if st.button("이 조건으로 검색", type="primary", key=f"chat_confirm_{plan['request_id']}", use_container_width=True):
-                try:
-                    complete_chat_search(plan)
-                    st.session_state.reset_search_filters = True
-                    st.rerun()
-                except ApiError as error:
-                    st.error(error.message)
-        with retry:
-            if st.button("다시 입력", key=f"chat_retry_{plan['request_id']}", use_container_width=True):
-                st.session_state.pending_plan = None
-                st.session_state.chat.append({"role": "assistant", "content": "다른 장소나 조건을 말씀해 주세요."})
-                st.rerun()
-
-
 def render_chat() -> None:
     size = st.session_state.get("chat_panel_state", "compact")
     if size == "collapsed":
@@ -730,16 +742,14 @@ def render_chat() -> None:
                 st.rerun()
         return
     with st.container(key=f"floating_chat_{size}"):
-        heading, expand, collapse = st.columns([6, 1, 1], vertical_alignment="center")
-        with heading:
-            st.markdown('<div class="cp-chat-title"><span>✦</span> AI 챗</div>', unsafe_allow_html=True)
-        with expand:
-            if st.button("크기 조절", icon=":material/close_fullscreen:" if size == "expanded" else ":material/open_in_full:",
-                         key="chat_expand", help="작게 보기" if size == "expanded" else "크게 보기", width=36):
+        with st.container(key="chat_header", horizontal=True, vertical_alignment="center", gap="small"):
+            st.markdown('<div class="cp-chat-title"><span>✦</span> AI 챗</div>', unsafe_allow_html=True, width="stretch")
+            resize_label = "대화창 줄이기" if size == "expanded" else "대화창 넓히기"
+            if st.button(resize_label, icon=":material/close_fullscreen:" if size == "expanded" else ":material/open_in_full:",
+                         key="chat_expand", help=resize_label, width=36):
                 st.session_state.chat_panel_state = "compact" if size == "expanded" else "expanded"
                 st.rerun()
-        with collapse:
-            if st.button("접기", icon=":material/close:", key="chat_collapse", help="AI 챗 접기", width=36):
+            if st.button("대화창 접기", icon=":material/remove:", key="chat_collapse", help="대화창 접기", width=36):
                 st.session_state.chat_panel_state = "collapsed"
                 st.rerun()
         with st.container(height=420 if size == "expanded" else 250, border=False,
@@ -749,15 +759,20 @@ def render_chat() -> None:
                     st.markdown(item["content"])
         pending = st.session_state.pending_plan
         if pending and pending.get("status") in ("AWAITING_CONFIRMATION", "AWAITING_LOCATION_CONFIRMATION"):
-            render_chat_confirmation(pending)
-            return
-        prompt = st.chat_input("찾고 싶은 충전소를 말씀해 주세요", key="floating_chat_input")
+            try:
+                complete_chat_search(pending)
+                st.session_state.reset_search_filters = True
+            except ApiError as error:
+                st.session_state.chat.append({"role": "assistant", "content": error.message})
+            st.rerun()
+        prompt = st.chat_input("강남역처럼 장소만 입력해도 가능해요", key="floating_chat_input")
         if prompt:
             st.session_state.chat.append({"role": "user", "content": prompt})
             try:
                 response = API.plan(prompt, access_token())
                 if response.get("status") in ("AWAITING_CONFIRMATION", "AWAITING_LOCATION_CONFIRMATION"):
-                    st.session_state.pending_plan = response
+                    complete_chat_search(response)
+                    st.session_state.reset_search_filters = True
                 else:
                     st.session_state.pending_plan = None
                     st.session_state.chat.append({"role": "assistant", "content": response["message"]})
@@ -769,16 +784,23 @@ def render_chat() -> None:
 def render_status_demo() -> None:
     labels = {1: "결과 없음", 2: "정보 지연", 3: "요청 제한", 4: "제공자 인증 만료", 5: "AI 챗 연결 실패"}
     with st.popover("상태 시연", icon=":material/bolt:", help="상태 시연", key="status_bolt"):
-        st.caption("테스트 전용 `/boom/1`~`/boom/5`")
-        scenario = st.selectbox("시나리오", list(labels), format_func=lambda item: f"boom/{item} · {labels[item]}")
-        if st.button("상태 적용", use_container_width=True):
-            try:
-                payload = API.boom(scenario, access_token())
-                level = st.info if scenario in (1, 2, 4) else st.warning
-                level(f"[시연] {payload['code']} · {payload['message']}")
-            except ApiError as error:
-                payload = error.payload or {}
-                st.error(f"[시연] {payload.get('code', 'ERROR')} · {error.message}")
+        group = st.radio("시연 대상", ["사용자 화면", "운영 대시보드"], horizontal=True, key="demo_group")
+        if group == "사용자 화면":
+            st.caption("테스트 전용 · 사용자 화면 상태")
+            scenario = st.selectbox("시나리오", list(labels), format_func=lambda item: f"{labels[item]} · boom/{item}")
+            if st.button("상태 적용", use_container_width=True):
+                try:
+                    payload = API.boom(scenario, access_token())
+                    level = st.info if scenario in (1, 2, 4) else st.warning
+                    level(f"[시연] {payload['code']} · {payload['message']}")
+                except ApiError as error:
+                    payload = error.payload or {}
+                    st.error(f"[시연] {payload.get('code', 'ERROR')} · {error.message}")
+        else:
+            scenario = st.selectbox("시나리오", ["요청 재처리", "캐시 갱신", "재시도 정책"], key="dashboard_demo_scenario")
+            st.caption("운영 API 연결 전 시연 안내입니다.")
+            if st.button("상태 확인", use_container_width=True):
+                st.info(f"[시연] {scenario} 기능은 운영 API 연결 후 사용할 수 있어요.")
 
 
 def render_header(dashboard_view: bool = False, navigation: Any = None) -> str | None:
@@ -800,7 +822,7 @@ def render_header(dashboard_view: bool = False, navigation: Any = None) -> str |
                 menu = navigation()
         with st.container(horizontal=True, horizontal_alignment="right", vertical_alignment="center",
                           gap="small", key="header_actions", width=116):
-            destination = "사용자 화면으로" if dashboard_view else "운영 대시보드"
+            destination = "사용자 화면" if dashboard_view else "운영 대시보드"
             if st.button(destination, icon=":material/home:" if dashboard_view else ":material/settings:", width=52, key="header_settings", help=destination):
                 if not dashboard_view and not can_view_dashboard(st.session_state.role):
                     role_dialog("관리자 전용 화면입니다.", "관리자만 운영 대시보드를 이용할 수 있습니다.")
@@ -908,7 +930,7 @@ def render_deployment_checks(reference: dict[str, Any]) -> None:
 
 
 def render_dashboard() -> None:
-    allowed = ["운영 개요", "요청 여정", "서비스 안정성", "빌드·배포"]
+    allowed = ["운영 개요", "요청 정보", "서비스 안정성", "빌드·배포"]
     if st.session_state.get("dashboard_navigation") not in allowed:
         st.session_state.dashboard_navigation = allowed[0]
     render_operations_dashboard(API, render_header, provider_states, load_deployment_reference)
@@ -924,7 +946,7 @@ def reset_result_page() -> None:
 
 
 def clear_facility_selection() -> None:
-    st.session_state.facility_groups = []
+    st.session_state.facility_groups = list(FACILITY_GROUPS)
     st.session_state.result_facility = "전체"
     reset_result_page()
 
@@ -932,7 +954,7 @@ def clear_facility_selection() -> None:
 def render_search() -> None:
     if st.session_state.pop("reset_search_filters", False):
         for key, value in {
-            "facility_groups": [], "outsider_filter": "전체", "parking_filter": "전체",
+            "facility_groups": list(FACILITY_GROUPS), "outsider_filter": "전체", "parking_filter": "전체",
             "result_facility": "전체", "charging_speed": "전체", "place_query": "",
             "suggestion_query": "", "place_suggestions": [], "selected_place": None,
         }.items():
@@ -981,7 +1003,8 @@ def render_search() -> None:
         with right:
             with st.container(key="map_view"):
                 st.iframe(build_map_html(visible_results, request,
-                                        st.session_state.get("selected_station_id"), availability_label),
+                                        st.session_state.get("selected_station_id"), availability_label,
+                                        quality_notices=st.session_state.quality_notices),
                           height=735, alt="카카오 지도 기반 충전소 위치와 충전 상태")
     render_chat()
 

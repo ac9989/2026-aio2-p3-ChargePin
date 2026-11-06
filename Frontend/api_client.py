@@ -43,9 +43,7 @@ class ChargePinApi:
             event["place_lookup"] = "success"
             event["result_count"] = len(payload)
         elif path == "/chat/plan" and isinstance(payload, dict):
-            if payload.get("status") == "BLOCKED":
-                event["guardrail_blocked"] = True
-            elif payload.get("candidates") or payload.get("search_request"):
+            if payload.get("candidates") or payload.get("search_request"):
                 event["place_lookup"] = "success"
             event["plan_status"] = payload.get("status")
         if isinstance(payload, dict) and "results" in payload and "applied_request" in payload:

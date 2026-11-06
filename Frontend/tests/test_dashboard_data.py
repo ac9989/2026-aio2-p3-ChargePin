@@ -60,15 +60,6 @@ class DashboardDataTests(unittest.TestCase):
                   for _ in range(105)]
         self.assertEqual(summarize_events(events)["search_count"], 100)
 
-    def test_guardrail_block_is_separately_counted(self):
-        result = summarize_events([
-            {"path": "/chat/plan", "outcome": "success", "guardrail_blocked": True,
-             "observed_at": "2026-11-06T00:00:00Z", "elapsed_ms": 8},
-        ])
-        self.assertEqual(result["guardrail_block_count"], 1)
-        self.assertEqual(result["search_count"], 0)
-        self.assertEqual(result["observed"][0]["state"], "차단")
-
 
 class RequestTelemetryTests(unittest.TestCase):
     def test_search_request_id_is_recorded_without_credentials_or_input(self):
@@ -89,14 +80,6 @@ class RequestTelemetryTests(unittest.TestCase):
         with patch.object(api, "_perform_request", return_value={"request_id": "<script>"}):
             api._request("POST", "/chat/plan", access_token="secret")
         self.assertNotIn("request_id", events[0])
-
-    def test_blocked_chat_plan_is_recorded_without_place_lookup(self):
-        events = []
-        api = ChargePinApi(observer=events.append)
-        with patch.object(api, "_perform_request", return_value={"request_id": "req-guard", "status": "BLOCKED"}):
-            api._request("POST", "/chat/plan", access_token="secret")
-        self.assertTrue(events[0]["guardrail_blocked"])
-        self.assertNotIn("place_lookup", events[0])
 
 
 class MapViewTests(unittest.TestCase):
