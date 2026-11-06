@@ -1,24 +1,26 @@
-"""Browser-only capture notice for the demo's general-user role."""
+"""Best-effort browser notice when a general user presses Print Screen."""
 from __future__ import annotations
 
 import streamlit as st
 
 
 def install_capture_notice(is_general_user: bool) -> None:
-    # A key event is only a notice, not a screenshot prevention mechanism.
+    # Operating systems and browsers may consume the key; this cannot block capture.
     enabled = "true" if is_general_user else "false"
     script = r"""
 <script>
 (() => {
-  const enabled = __ENABLED__;
-  if (window.__chargepinPrintScreenHandler) {
-    document.removeEventListener("keyup", window.__chargepinPrintScreenHandler, true);
-    delete window.__chargepinPrintScreenHandler;
+  const previous = window.__chargepinCaptureGuard;
+  if (previous) {
+    document.removeEventListener("keydown", previous.onKey, true);
+    document.removeEventListener("keyup", previous.onKey, true);
+    window.removeEventListener("message", previous.onMessage);
+    delete window.__chargepinCaptureGuard;
   }
-  const existing = document.getElementById("chargepin-capture-dialog");
-  if (!enabled) { if (existing) existing.remove(); return; }
-  const handler = (event) => {
-    if (event.key !== "PrintScreen" && event.code !== "PrintScreen") return;
+  const oldDialog = document.getElementById("chargepin-capture-dialog");
+  if (!__ENABLED__) { if (oldDialog) oldDialog.remove(); return; }
+
+  function showNotice() {
     if (document.getElementById("chargepin-capture-dialog")) return;
     const dialog = document.createElement("dialog");
     dialog.id = "chargepin-capture-dialog";
@@ -31,11 +33,22 @@ def install_capture_notice(is_general_user: bool) -> None:
     dialog.querySelector("button").addEventListener("click", () => dialog.close());
     document.body.appendChild(dialog);
     dialog.showModal();
-  };
-  window.__chargepinPrintScreenHandler = handler;
-  document.addEventListener("keyup", handler, true);
+  }
+  function onKey(event) {
+    if (event.key === "PrintScreen" || event.code === "PrintScreen" || event.keyCode === 44) showNotice();
+  }
+  function onMessage(event) {
+    if (!event.data || event.data.type !== "chargepin:printscreen") return;
+    const isFrame = Array.from(document.querySelectorAll("iframe")).some(frame => frame.contentWindow === event.source);
+    if (isFrame) showNotice();
+  }
+  window.__chargepinCaptureGuard = {onKey, onMessage};
+  document.addEventListener("keydown", onKey, true);
+  document.addEventListener("keyup", onKey, true);
+  window.addEventListener("message", onMessage);
 })();
 </script>
 """
-    # Sidebar is hidden; executing the static script there does not move the header.
-    st.sidebar.html(script.replace("__ENABLED__", enabled), unsafe_allow_javascript=True)
+    # Render in the mounted main area, even when Streamlit's sidebar is collapsed.
+    with st.container(key="capture_listener"):
+        st.html(script.replace("__ENABLED__", enabled), unsafe_allow_javascript=True)
