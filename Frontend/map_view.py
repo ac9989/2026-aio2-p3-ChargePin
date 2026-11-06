@@ -19,16 +19,16 @@ MAP_STYLE = r"""<style>
 .map-legend{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin-top:7px;padding-top:7px;border-top:1px solid #edf0f2}
 .map-legend-item{display:inline-flex;align-items:center;gap:5px;color:#52616d;white-space:nowrap}
 .map-legend-symbol{display:inline-grid;place-items:center;width:19px;height:19px;border-radius:50%;color:#fff;font-weight:700;font-size:11px;line-height:1}
-.map-legend-symbol.available{background:#437c73}.map-legend-symbol.unknown{background:#5c6269}
-.map-notice{position:absolute;top:16px;left:16px;z-index:5;max-width:min(500px,calc(100% - 86px));max-height:38%;overflow:auto;padding:11px 14px;background:#fff;border:1px solid #eedda7;border-radius:12px;box-shadow:0 6px 22px #202c391c;color:#5e5949;font-size:12px;line-height:1.55}
+.map-legend-symbol.available{background:#f5b51b;color:#252b32}.map-legend-symbol.unknown{background:#5c6269}
+.map-notice{position:absolute;top:14px;left:14px;z-index:5;max-width:min(380px,calc(100% - 80px));max-height:32%;overflow:auto;box-sizing:border-box;padding:10px 13px;background:#fffdf5;border:1px solid #ead49a;border-radius:11px;box-shadow:0 4px 16px #202c391c;color:#665b40;font:12px/1.5 "Pretendard","Malgun Gothic",sans-serif;overflow-wrap:anywhere}
 .map-notice strong{display:block;color:#7d5b12;font-size:13px;margin-bottom:3px}.map-notice ul{margin:0;padding-left:16px}.map-notice li+li{margin-top:3px}
 .map-zoom{position:absolute;z-index:6;top:16px;right:16px;display:flex;flex-direction:column;background:#fff;border:1px solid #e1e6e9;border-radius:12px;box-shadow:0 5px 18px #202c391c;overflow:hidden}
 .map-zoom[hidden]{display:none}.map-zoom button{display:grid;place-items:center;width:38px;height:38px;padding:0;border:0;background:#fff;color:#28323b;font:400 23px/1 Arial,sans-serif;cursor:pointer}.map-zoom button+button{border-top:1px solid #e9edf0}.map-zoom button:hover{background:#f2f4f6}.map-zoom button:focus-visible{outline:2px solid #e2af32;outline-offset:-3px}
 .map-status{padding:9px 4px 0;color:#79848f;font-size:12px;line-height:1.45}
 .cp-map-popup{position:relative;width:300px;max-width:calc(100vw - 32px);padding:16px;background:#fff;border:1px solid #e1e6e9;border-radius:15px;box-shadow:0 12px 35px #1825322b;color:#252b32;font:13px/1.5 "Pretendard","Malgun Gothic",sans-serif;word-break:keep-all;overflow-wrap:anywhere}
-.cp-map-popup-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.cp-map-popup-head strong{font-size:15px;line-height:1.4;font-weight:750}.cp-map-close{display:grid;place-items:center;flex:none;width:28px;height:28px;margin:-4px -5px 0 0;padding:0;border:0;border-radius:8px;background:#f2f4f6;color:#53616d;font:20px/1 Arial,sans-serif;cursor:pointer}.cp-map-close:hover{background:#e7ebee}.cp-map-close:focus-visible{outline:2px solid #d6a626}
-.cp-map-address{margin:5px 0 11px;color:#788694;font-size:12px;line-height:1.5}.cp-map-fields{border-top:1px solid #edf0f2;padding-top:8px}.cp-map-row{display:grid;grid-template-columns:68px minmax(0,1fr);gap:8px;padding:4px 0;align-items:start}.cp-map-row span{color:#82909d}.cp-map-row b{text-align:right;color:#303b45;font-weight:600;line-height:1.5}.cp-map-row b.warn{color:#98700e}
-.cp-map-hover{font-family:"Pretendard","Malgun Gothic",sans-serif;min-width:150px;padding:9px 12px;color:#252b32;font-size:12px;line-height:1.5}.cp-map-hover strong{display:block;font-size:13px}
+.cp-map-popup-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.cp-map-popup-head strong{font-size:15px;line-height:1.4;font-weight:750;border-left:3px solid #f5a623;padding-left:9px}.cp-map-close{display:grid;place-items:center;flex:none;width:28px;height:28px;margin:-4px -5px 0 0;padding:0;border:0;border-radius:8px;background:#f2f4f6;color:#53616d;font:20px/1 Arial,sans-serif;cursor:pointer}.cp-map-close:hover{background:#e7ebee}.cp-map-close:focus-visible{outline:2px solid #d6a626}
+.cp-map-address{margin:5px 0 11px;color:#788694;font-size:12px;line-height:1.5}.cp-map-fields{border-top:1px solid #edf0f2;padding-top:8px}.cp-map-row{display:grid;grid-template-columns:68px minmax(0,1fr);gap:8px;padding:4px 0;align-items:start}.cp-map-row span{color:#82909d}.cp-map-row b{text-align:right;color:#303b45;font-weight:600;line-height:1.5}.cp-map-row b.warn{color:#a4650c}.cp-map-row b.available{color:#087a5d}.cp-map-row b.speed{color:#b76512}
+.cp-map-hover{width:220px;max-width:calc(100vw - 40px);white-space:normal;overflow-wrap:anywhere;word-break:keep-all;background:#fff;border:1px solid #dce4e9;border-radius:10px;box-shadow:0 4px 14px #172f3b26;font-family:"Pretendard","Malgun Gothic",sans-serif;min-width:150px;padding:9px 12px;color:#252b32;font-size:12px;line-height:1.5}.cp-map-hover strong{display:block;font-size:13px}
 @media(max-width:700px){.map-shell{height:520px}.map-badge{bottom:12px;left:12px}.map-notice{top:12px;left:12px;max-width:calc(100% - 72px)}.map-zoom{top:12px;right:12px}}
 </style>"""
 
@@ -96,7 +96,7 @@ def build_map_html(results: list[dict[str, Any]], request: dict[str, Any] | None
             ("상태 갱신", format_reported_at(station.get("reported_at"))),
         ]
         rows = "".join('<div class="cp-map-row"><span>' + escape(str(label)) + '</span><b'
-                       + (' class="warn"' if label == "충전 상태" and "지연" in str(value) else '')
+                       + (' class="available"' if label == "충전 상태" and isinstance((station.get("availability") or {}).get("available_chargers"), int) and (station.get("availability") or {}).get("available_chargers") > 0 else ' class="warn"' if label == "충전 상태" and "지연" in str(value) else ' class="speed"' if label == "충전 속도" else '')
                        + '>' + escape(str(value)) + '</b></div>' for label, value in fields)
         detail = ('<div class="cp-map-popup" role="group" aria-label="충전소 상세 정보">'
                   '<div class="cp-map-popup-head"><strong>' + name + '</strong>'
@@ -136,10 +136,11 @@ function startMap(){try{
   document.getElementById("map-zoom-out").addEventListener("click",function(){map.setLevel(Math.min(14,map.getLevel()+1));});
   const svg='<svg xmlns="http://www.w3.org/2000/svg" width="36" height="45" viewBox="0 0 36 45"><path d="M18 2C9.2 2 2 9.2 2 18c0 11 16 25 16 25s16-14 16-25C34 9.2 26.8 2 18 2Z" fill="#252b32" stroke="white" stroke-width="2.5"/><path d="M19.5 7 12 19h5l-1 8 8-12h-5z" fill="#FFD14D"/></svg>';
 
-  const hover=new maps.InfoWindow();let detail=null;
+  let hover=null,detail=null;
+  function closeHover(){if(hover){hover.setMap(null);hover=null;}}
   function closeDetail(){if(detail){detail.setMap(null);detail=null;}active=null;}
   function openDetail(item,marker,move){
-    hover.close();closeDetail();
+    closeHover();closeDetail();
     const content=document.createElement("div");content.innerHTML=item.detail;
     content.querySelector(".cp-map-close").addEventListener("click",function(event){event.stopPropagation();closeDetail();});
     detail=new maps.CustomOverlay({position:marker.getPosition(),content:content,xAnchor:0.5,yAnchor:1.18,zIndex:7,clickable:true});
@@ -148,11 +149,11 @@ function startMap(){try{
   stations.forEach(function(item){
     const count = item.available;
     const valid = Number.isInteger(count) && count > 0;
-    const icon = valid ? `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="45" viewBox="0 0 36 45"><path d="M18 2C9.2 2 2 9.2 2 18c0 11 16 25 16 25s16-14 16-25C34 9.2 26.8 2 18 2Z" fill="#437c73" stroke="white" stroke-width="2.5"/><text x="18" y="24" fill="white" text-anchor="middle" font-family="Arial" font-size="15" font-weight="bold">${count}</text></svg>` : svg.replace("#252b32", "#5c6269").replace("#FFD14D", "#ffffff");
+    const icon = valid ? `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="45" viewBox="0 0 36 45"><path d="M18 2C9.2 2 2 9.2 2 18c0 11 16 25 16 25s16-14 16-25C34 9.2 26.8 2 18 2Z" fill="#f5b51b" stroke="white" stroke-width="2.5"/><text x="18" y="24" fill="#252b32" text-anchor="middle" font-family="Arial" font-size="15" font-weight="bold">${count}</text></svg>` : svg.replace("#252b32", "#5c6269").replace("#FFD14D", "#ffffff");
     const markerImage=new maps.MarkerImage("data:image/svg+xml;charset=utf-8,"+encodeURIComponent(icon),new maps.Size(36,45),{offset:new maps.Point(18,44)});
     const marker=new maps.Marker({position:new maps.LatLng(item.lat,item.lng),map:map,image:markerImage});
-    maps.event.addListener(marker,"mouseover",function(){if(active!==marker){hover.setContent(item.hover);hover.open(map,marker);}});
-    maps.event.addListener(marker,"mouseout",function(){hover.close();});
+    maps.event.addListener(marker,"mouseover",function(){if(active!==marker){closeHover();hover=new maps.CustomOverlay({position:marker.getPosition(),content:item.hover,xAnchor:0.5,yAnchor:1.35,zIndex:6});hover.setMap(map);}});
+    maps.event.addListener(marker,"mouseout",closeHover);
     maps.event.addListener(marker,"click",function(){openDetail(item,marker,true);});
     if(item.selected)openDetail(item,marker,false);
   });

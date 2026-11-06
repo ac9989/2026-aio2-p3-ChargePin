@@ -34,21 +34,30 @@ def empty_chart(message: str = "데이터 연결 대기") -> None:
                 + label(message) + '</span></div>', unsafe_allow_html=True)
 
 
-def metric_card(title: str, value: str, detail: str, tone: str = "neutral") -> None:
-    if any(word in title for word in ("백엔드", "연결")):
-        icon = '<path d="M4 12h3l2-5 3 10 2-5h6"/>'
-    elif any(word in title for word in ("실패", "부분", "복구")):
-        icon = '<path d="M12 4 3 20h18L12 4Z"/><path d="M12 9v4m0 3v.2"/>'
-    elif any(word in title for word in ("CI/CD", "배포", "게시", "테스트", "실행")):
-        icon = '<circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="18" cy="18" r="2"/><path d="M8 6h8M18 8v8"/>'
-    elif "응답" in title:
-        icon = '<circle cx="12" cy="12" r="8"/><path d="M12 7v5l3 2"/>'
-    else:
-        icon = '<circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/>'
+def metric_card(title: str, value: str, detail: str, tone: str = "neutral", link: str | None = None) -> None:
+    icons = {
+        "API 요청": '<path d="M5 6h14v12H5zM8 10h8M8 14h5"/><path d="m16 13 2 1-2 1"/>',
+        "부분 응답 · 실패": '<path d="M12 3 3 20h18L12 3zM12 9v5m0 3h.01"/>',
+        "요청 실패": '<path d="M12 3 3 20h18L12 3zM12 9v5m0 3h.01"/>',
+        "백엔드 헬스": '<path d="M3 12h4l2-5 3 10 3-6h6"/>',
+        "백엔드 연결": '<path d="M3 12h4l2-5 3 10 3-6h6"/>',
+        "최근 GitHub 실행": '<circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="18" cy="18" r="2"/><path d="M8 6h8m2 2v8"/>',
+        "최근 실행": '<circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="18" cy="18" r="2"/><path d="M8 6h8m2 2v8"/>',
+        "장소 조회": '<path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0Z"/><circle cx="12" cy="10" r="2"/>',
+        "챗 해석": '<path d="M4 5h16v11H9l-5 4V5z"/><path d="m10 10 2-2 2 2-2 2z"/>',
+        "충전소 검색": '<circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/>',
+        "검색 평균 응답": '<circle cx="12" cy="12" r="8"/><path d="M12 7v5l4 2"/>',
+        "자동 복구": '<path d="M20 7v5h-5M4 17v-5h5"/><path d="M6 9a7 7 0 0 1 12-2l2 5M4 12l2 5a7 7 0 0 0 12-2"/>',
+        "테스트 결과": '<path d="M8 4h8v3H8zM6 5H4v16h16V5h-4M8 13l2 2 5-5"/>',
+        "이미지 게시": '<path d="m12 3 8 4.5v9L12 21l-8-4.5v-9zM4 7.5l8 4.5 8-4.5M12 12v9"/><path d="M12 3v4m-2-2 2-2 2 2"/>',
+        "EC2 배포": '<rect x="4" y="5" width="16" height="6" rx="2"/><rect x="4" y="13" width="16" height="6" rx="2"/><path d="M8 8h.01M8 16h.01M12 8h5M12 16h5"/>',
+    }
+    icon = icons.get(title, '<circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/>')
     svg = '<span class="cp-metric-icon"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + icon + '</svg></span>'
     st.markdown(
-        '<div class="cp-metric">' + svg + '<div class="cp-metric-content"><span class="cp-metric-title">' + label(title)
-        + '</span><div class="cp-metric-value">' + label(value)
+        '<div class="cp-metric">' + svg + '<div class="cp-metric-content"><div class="cp-metric-title-row"><span class="cp-metric-title">' + label(title)
+        + '</span>' + ('<a class="cp-reference-link" href="' + label(link) + '" target="_self">배포·운영 관리표 ↗</a>' if link else '')
+        + '</div><div class="cp-metric-value">' + label(value)
         + '</div><span class="cp-metric-sub ' + label(tone) + '">' + label(detail) + '</span></div></div>',
         unsafe_allow_html=True,
     )
@@ -73,7 +82,7 @@ def line_chart(data: list[dict[str, Any]], value: str, unit: str, empty: str) ->
              + base.mark_point(color=AMBER, size=55, filled=True)).properties(height=172)
     st.altair_chart(chart.configure_view(stroke=None).configure_axis(
         labelColor=MUTED, titleColor=MUTED, gridColor=GRID, domainColor=GRID,
-        labelFontSize=11, titleFontSize=11), width="stretch", theme=None)
+        labelFontSize=13, titleFontSize=13), width="stretch", theme=None)
 
 
 def bar_chart(data: list[dict[str, Any]], empty: str) -> None:
@@ -89,7 +98,7 @@ def bar_chart(data: list[dict[str, Any]], empty: str) -> None:
     ).properties(height=172))
     st.altair_chart(chart.configure_view(stroke=None).configure_axis(
         labelColor=MUTED, titleColor=MUTED, gridColor=GRID, domainColor=GRID,
-        labelFontSize=11, titleFontSize=11), width="stretch", theme=None)
+        labelFontSize=13, titleFontSize=13), width="stretch", theme=None)
 
 
 def donut_chart(data: list[dict[str, Any]]) -> None:
@@ -102,11 +111,11 @@ def donut_chart(data: list[dict[str, Any]]) -> None:
         color=alt.Color("kind:N", title="요청 유형",
                         scale=alt.Scale(domain=["장소 조회", "챗 해석", "직접 검색", "챗 검색"],
                                         range=["#2D333A", "#D5A11B", "#98A6B1", "#607382"]),
-                        legend=alt.Legend(orient="right", labelLimit=100)),
+        legend=alt.Legend(orient="right", labelLimit=140)),
         tooltip=[alt.Tooltip("kind:N", title="요청"), alt.Tooltip("count:Q", title="건수", format="d")],
     ).properties(height=190))
     st.altair_chart(chart.configure_view(stroke=None).configure_legend(
-        labelColor=MUTED, titleColor=MUTED, labelFontSize=11), width="stretch", theme=None)
+        labelColor=MUTED, titleColor=MUTED, labelFontSize=13, titleFontSize=13), width="stretch", theme=None)
 
 
 def provider_rows(states: list[tuple[str, str]], limit: int | None = None) -> None:
@@ -162,7 +171,7 @@ def pipeline_snapshot(reference: dict[str, Any], compact: bool = False) -> None:
 
 
 def app_topbar(title: str) -> None:
-    scope = ("선택한 항목의 요약" if title == "운영 현황" else
+    scope = ("요청 · 서비스 안정성 · 빌드/배포 통합 요약" if title == "운영 현황" else
              "관리표 기록과 실시간 연동 상태" if title == "빌드·배포" else "현재 세션 · 최근 100건")
     st.markdown('<div class="cp-dashboard-title"><span></span><h2>' + label(title)
                 + '</h2></div><div class="cp-dashboard-subtitle">' + label(scope) + '</div>',
@@ -213,8 +222,16 @@ def overview(data: dict[str, Any], health: str, providers: list[tuple[str, str]]
                           ("검색 실패", f'{data["failure_count"]:,}건')],
                          location_summary, tone)
         with st.container(border=True):
-            section_title("응답 현황", "현재 세션 · 건")
-            bar_chart([{"kind": "부분 응답", "count": data["partial_count"]}, {"kind": "실패", "count": data["failure_count"]}] if data["search_count"] else [], "요청 이력이 없어요")
+            section_title("최근 확인이 필요한 요청", "현재 세션 · 최근 100건")
+            issues = [item for item in reversed(data["searches"]) if item["state"] in ("부분 응답", "실패")]
+            if issues:
+                records = [{"시각": display_time(item["time"], full=True), "요청": item["kind"],
+                            "결과": item["state"], "응답 시간": f'{item["elapsed_ms"]:,} ms' if item["elapsed_ms"] is not None else "확인 필요",
+                            "요청 ID": item["request_id"] or "확인 필요"} for item in issues[:5]]
+                st.dataframe(pd.DataFrame(records), hide_index=True, width="stretch")
+                st.caption("현재 세션에서 관측한 결과이며, 원인과 서버 전체 상태는 별도 로그 연결이 필요합니다.")
+            else:
+                empty_chart("현재 세션에 부분 응답이나 검색 실패 기록이 없어요" if data["search_count"] else "검색 요청이 기록되면 표시돼요")
     else:
         runs, runs_error = github_runs()
         latest = runs[0] if runs else {}
@@ -232,6 +249,78 @@ def overview(data: dict[str, Any], health: str, providers: list[tuple[str, str]]
                 bar_chart([{"kind": key, "count": value} for key, value in counts.items()], "실행 이력이 없어요")
 
 
+
+def overview_dashboard(data: dict[str, Any], health: str,
+                      providers: list[tuple[str, str]]) -> None:
+    """Show observed request, stability, and deployment signals together."""
+    counts = {item["kind"]: item["count"] for item in data["kind_counts"]}
+    issue_count = data["partial_count"] + data["failure_count"]
+    health_tone = "good" if health == "정상" else "bad" if health == "연결 불가" else "warn"
+    runs, runs_error = github_runs()
+    latest = runs[0] if runs else {}
+    conclusion = latest.get("conclusion")
+    run_state = {"success": "성공", "failure": "실패", "cancelled": "취소"}.get(
+        conclusion, "진행 중" if latest and latest.get("status") == "in_progress" else
+        "진행 중" if latest else "확인 필요")
+    if latest and not conclusion and latest.get("status") not in ("in_progress", "queued"):
+        run_state = "결과 확인 필요"
+    run_tone = "good" if run_state == "성공" else "bad" if run_state == "실패" else "warn"
+    branch = str(latest.get("head_branch") or "브랜치 정보 없음")
+
+    cards = [
+        ("API 요청", f'{len(data["observed"]):,}건',
+         f'장소 조회 {counts.get("장소 조회", 0):,} · 검색 {data["search_count"]:,}', "neutral"),
+        ("부분 응답 · 실패", f'{issue_count:,}건',
+         f'부분 응답 {data["partial_count"]:,} · 실패 {data["failure_count"]:,}', "warn" if issue_count else "good"),
+        ("백엔드 헬스", health, "/healthz 현재 확인", health_tone),
+        ("최근 GitHub 실행", run_state,
+         branch if latest else ("GitHub 연결 확인 필요" if runs_error else "실행 이력 없음"), run_tone),
+    ]
+    with st.container(key="overview_metrics"):
+        for col, item in zip(st.columns(4, gap="medium"), cards):
+            with col:
+                metric_card(*item)
+
+    with st.container(key="overview_charts"):
+        left, right = st.columns([1.25, 1], gap="medium")
+        with left:
+            with st.container(border=True, key="overview_request_trend"):
+                section_title("요청 추이", "선택 기간 · 분 단위")
+                line_chart(data["minute_counts"], "count", "건", "선택 기간에 기록된 검색 요청이 없습니다.")
+        with right:
+            with st.container(border=True, key="overview_request_mix"):
+                section_title("요청 구성", "장소 조회 · AI · 직접 검색")
+                donut_chart(data["kind_counts"])
+
+    with st.container(key="overview_details"):
+        request_col, stability_col, deploy_col = st.columns([1.1, 1, 1], gap="medium")
+        with request_col:
+            with st.container(border=True, key="overview_recent_requests"):
+                section_title("최근 요청", "최대 5건 · KST")
+                request_rows(data["observed"])
+                st.caption(f'검색 평균 응답 시간: {data["average_ms"]:,} ms' if data["average_ms"] is not None
+                           else "응답 시간 데이터가 아직 없습니다.")
+        with stability_col:
+            with st.container(border=True, key="overview_stability"):
+                section_title("서비스 안정성", "현재 확인 결과")
+                provider_rows([("백엔드 헬스", health), *providers])
+                st.caption("외부 API는 최근 관측 결과와 설정 여부를 표시합니다.")
+        with deploy_col:
+            with st.container(border=True, key="overview_deployment"):
+                section_title("빌드 · 배포", "GitHub 실시간 · EC2 수동 확인")
+                run_time = display_time(event_time(latest.get("created_at")), full=True) if latest else "실행 기록 확인 필요"
+                provider_rows([
+                    ("최근 Actions", run_state),
+                    ("브랜치", branch),
+                    ("실행 시각", run_time),
+                    ("EC2 배포", "수동 확인 필요"),
+                ])
+                if runs_error:
+                    st.caption(runs_error)
+                elif latest.get("html_url"):
+                    st.link_button("GitHub Actions 실행 보기", latest["html_url"], use_container_width=True)
+                st.link_button("배포 · 운영 관리표", "https://docs.google.com/spreadsheets/d/1REaJ0qNf6k_KcAHylli05kOVM_SWHloR/edit?gid=853363652#gid=853363652",
+                               use_container_width=True)
 
 def flow_view(data: dict[str, Any]) -> None:
     counts = {row["kind"]: row["count"] for row in data["kind_counts"]}
@@ -285,9 +374,7 @@ def system_view(data: dict[str, Any], health: str, providers: list[tuple[str, st
     with st.container(key="system_kpis"):
         for col, item in zip(st.columns(4, gap="medium"), cards):
             with col:
-                metric_card(*item)
-                if item[0] == "EC2 배포":
-                    st.markdown('<a class="cp-reference-link" href="https://docs.google.com/spreadsheets/d/1REaJ0qNf6k_KcAHylli05kOVM_SWHloR/edit?gid=853363652#gid=853363652" target="_self">배포·운영 관리표 ↗</a>', unsafe_allow_html=True)
+                metric_card(*item, link="https://docs.google.com/spreadsheets/d/1REaJ0qNf6k_KcAHylli05kOVM_SWHloR/edit?gid=853363652#gid=853363652" if item[0] == "EC2 배포" else None)
     with st.container(key="system_charts"):
         left, right = st.columns([1.2, 1], gap="medium")
         with left:
@@ -333,24 +420,91 @@ def github_runs() -> tuple[list[dict[str, Any]], str | None]:
         return [], "GitHub 실행 이력을 불러오지 못했어요."
 
 
+
+@st.cache_data(ttl=120, show_spinner=False)
+def github_jobs(run_id: int) -> tuple[list[dict[str, Any]], str | None]:
+    try:
+        response = requests.get(
+            f"https://api.github.com/repos/ac9989/2026-aio2-p3-ChargePin/actions/runs/{run_id}/jobs",
+            params={"per_page": 100},
+            headers={"Accept": "application/vnd.github+json"}, timeout=6)
+        if response.status_code != 200:
+            return [], f"작업 조회 실패 · HTTP {response.status_code}"
+        return response.json().get("jobs", []), None
+    except (requests.RequestException, ValueError):
+        return [], "작업 이력을 불러오지 못했어요."
+
+
+@st.cache_data(ttl=120, show_spinner=False)
+def latest_main_run() -> tuple[dict[str, Any] | None, str | None]:
+    try:
+        response = requests.get(
+            "https://api.github.com/repos/ac9989/2026-aio2-p3-ChargePin/actions/workflows/ci.yml/runs",
+            params={"branch": "main", "event": "push", "per_page": 1},
+            headers={"Accept": "application/vnd.github+json"}, timeout=6)
+        if response.status_code != 200:
+            return None, f"main 실행 조회 실패 · HTTP {response.status_code}"
+        runs = response.json().get("workflow_runs", [])
+        return (runs[0] if runs else None), None
+    except (requests.RequestException, ValueError):
+        return None, "main 실행 이력을 불러오지 못했어요."
+
+
+def job_status(job: dict[str, Any] | None) -> str:
+    if not job:
+        return "확인 필요"
+    if job.get("status") != "completed":
+        return "진행 중"
+    return {"success": "성공", "failure": "실패", "cancelled": "취소",
+            "skipped": "건너뜀", "timed_out": "시간 초과"}.get(job.get("conclusion"), "확인 필요")
+
+
+def ci_card_status(runs: list[dict[str, Any]]) -> tuple[str, str, str, str]:
+    latest_ci = next((run for run in runs if run.get("name") == "ChargePin CI"), None)
+    tests, test_detail = "확인 필요", "최근 CI 작업 없음"
+    if latest_ci and isinstance(latest_ci.get("id"), int):
+        jobs, error = github_jobs(latest_ci["id"])
+        expected = {"Backend unit tests", "Frontend syntax check", "Existing Auto Healing policy tests"}
+        found = [job for job in jobs if job.get("name") in expected]
+        states = [job_status(job) for job in found]
+        if error:
+            tests, test_detail = "조회 실패", error
+        elif len(found) != len(expected):
+            tests, test_detail = "확인 필요", "테스트 작업 정보가 불완전합니다"
+        else:
+            tests = ("실패" if any(state in ("실패", "시간 초과") for state in states)
+                     else "진행 중" if "진행 중" in states
+                     else "성공" if all(state == "성공" for state in states)
+                     else "확인 필요")
+            test_detail = f"CI #{latest_ci.get('run_number', '—')} · {latest_ci.get('head_branch', '—')} · 테스트·문법 검사"
+
+    main_run, error = latest_main_run()
+    published, publish_detail = "확인 필요", error or "main 게시 실행 없음"
+    if main_run and isinstance(main_run.get("id"), int):
+        jobs, error = github_jobs(main_run["id"])
+        job = next((item for item in jobs if item.get("name") == "Publish both images to GHCR (main only)"), None)
+        published = "조회 실패" if error else job_status(job)
+        publish_detail = error or f"main CI #{main_run.get('run_number', '—')} · GHCR 게시 작업"
+    return tests, test_detail, published, publish_detail
+
+
 def cicd_view(reference: dict[str, Any]) -> None:
 
     reference_date = str(reference.get("source_date", "확인 필요"))
     runs, runs_error = github_runs()
     latest = runs[0] if runs else {}
+    tests, test_detail, published, publish_detail = ci_card_status(runs)
     recent = {"success": "성공", "failure": "실패", "cancelled": "취소"}.get(latest.get("conclusion"), "진행 중" if latest else "연결 대기")
     cards = [
         ("최근 실행", recent, "GitHub Actions", "neutral"),
-        ("테스트 결과", "연결 대기", "실행별 성공 · 실패", "neutral"),
-        ("이미지 게시", "연결 대기", "GHCR 실행 상태", "neutral"),
+        ("테스트 결과", tests, test_detail, "good" if tests == "성공" else "bad" if tests == "실패" else "neutral"),
+        ("이미지 게시", published, publish_detail, "good" if published == "성공" else "bad" if published == "실패" else "neutral"),
         ("EC2 배포", "수동", "관리표 기록 · " + reference_date, "neutral"),
     ]
     with st.container(key="pipeline_kpis"):
         for col, item in zip(st.columns(4, gap="medium"), cards):
             with col:
-                metric_card(*item)
-                if item[0] == "EC2 배포":
-                    st.markdown('<a class="cp-reference-link" href="https://docs.google.com/spreadsheets/d/1REaJ0qNf6k_KcAHylli05kOVM_SWHloR/edit?gid=853363652#gid=853363652" target="_self">배포·운영 관리표 ↗</a>', unsafe_allow_html=True)
+                metric_card(*item, link="https://docs.google.com/spreadsheets/d/1REaJ0qNf6k_KcAHylli05kOVM_SWHloR/edit?gid=853363652#gid=853363652" if item[0] == "EC2 배포" else None)
     with st.container(border=True, key="pipeline_flow"):
         section_title("배포 흐름", "관리표 기록 · " + reference_date + " · 실시간 아님")
         pipeline_snapshot(reference)
@@ -470,6 +624,8 @@ def render_operations_dashboard(api: Any, header: Callable[..., str | None],
                             unsafe_allow_html=True, width="content")
                 if st.button("갱신", icon=":material/refresh:", key="dashboard_refresh"):
                     github_runs.clear()
+                    github_jobs.clear()
+                    latest_main_run.clear()
                     st.rerun()
     cutoff = datetime.now(KST) - timedelta(hours={"1시간": 1, "24시간": 24, "7일": 168}[period])
     events = [event for event in st.session_state.get("api_events", []) if event_time(event.get("observed_at")) is not None and event_time(event.get("observed_at")) >= cutoff]
@@ -478,7 +634,7 @@ def render_operations_dashboard(api: Any, header: Callable[..., str | None],
     reference = reference_loader()
     with st.container(key="operations_content"):
         if menu == "운영 개요":
-            overview(data, health, states, reference)
+            overview_dashboard(data, health, states)
         elif menu == "요청 정보":
             flow_view(data)
         elif menu == "서비스 안정성":

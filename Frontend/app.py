@@ -361,7 +361,7 @@ MAP_CSS = """
 def init_state() -> None:
     defaults: dict[str, Any] = {
         "role": None, "auth_token": None, "view": "search", "mode": "탐색", "results": [], "request": None,
-        "chat": [{"role": "assistant", "content": "안녕하세요, 차지핀이에요. 서울의 충전할 장소를 말씀해 주세요. (기본 설정 반경 0.5km)"}],
+        "chat": [{"role": "assistant", "content": "안녕하세요, 차지핀이에요. 서울의 충전할 장소를 말씀해 주세요. (챗봇 설정 범위 1km)"}],
         "pending_plan": None, "notice": None, "quality_notices": [], "booted": False, "place_query": "",
         "place_suggestions": [], "suggestion_query": "", "suggestion_error": None, "selected_place": None,
     }
@@ -673,9 +673,9 @@ def render_direct_search() -> None:
         st.radio("외부인 이용", ["전체", "가능", "불가", "확인 필요"], horizontal=True, key="outsider_filter")
         st.radio("주차 요금", ["전체", "무료", "무료 아님", "확인 필요"], horizontal=True, key="parking_filter",
                  help="충전 요금과 별도입니다. 무료가 아닌 경우 실제 금액은 확인이 필요합니다.")
-        diameter = st.radio("검색 범위", [1, 2, 3], horizontal=True,
-                            format_func=lambda value: f"{value} km", key="search_diameter",
-                            help="선택한 범위의 중심에서 각각 0.5·1·1.5km 이내를 검색합니다.")
+        radius_choice = st.radio("검색 범위", [1, 2, 3], horizontal=True,
+                                 format_func=lambda value: f"{value} km", key="search_diameter",
+                                 help="표시된 값의 절반을 반경으로 검색합니다: 반경 0.5·1·1.5km.")
     search_col, refresh_col = st.columns([5, 1], vertical_alignment="bottom")
     with search_col:
         search_clicked = st.button("충전소 검색", type="primary", use_container_width=True)
@@ -685,10 +685,9 @@ def render_direct_search() -> None:
         if selected_place is None:
             st.warning("장소명을 입력한 뒤 카카오 장소 후보를 선택해 주세요.")
             return
-        radius = diameter / 2
+        radius = radius_choice / 2
         try:
-            server_radius = 1 if radius <= 1 else 3
-            response = API.search(search_payload(selected_place, server_radius, connector_labels), access_token())
+            response = API.search(search_payload(selected_place, radius, connector_labels), access_token())
             set_search_response(apply_search_radius(response, selected_place["location"], radius))
             st.rerun()
         except ApiError as error:
@@ -737,7 +736,7 @@ def render_chat() -> None:
     size = st.session_state.get("chat_panel_state", "compact")
     if size == "collapsed":
         with st.container(key="chat_launcher"):
-            if st.button("AI 챗 열기", icon=":material/chat:", key="chat_open"):
+            if st.button("AI 챗", icon=":material/bolt:", key="chat_open"):
                 st.session_state.chat_panel_state = "compact"
                 st.rerun()
         return
@@ -960,6 +959,7 @@ def render_search() -> None:
         }.items():
             st.session_state[key] = value
     render_header()
+    quality_notices = [str(item) for item in st.session_state.get("quality_notices", []) if item]
     with st.container(key="map_workspace"):
         left, right = st.columns([1, 2.3], gap="medium")
         with left:
@@ -985,14 +985,19 @@ def render_search() -> None:
                     count_slot, filter_slot = st.columns([1, 1.2], vertical_alignment="center",
                                                           gap="small")
                     with filter_slot:
-                        labels = sorted({result_facility_label(item) for item in visible_results})
-                        options = ["전체"] + labels
+                        options = ["전체"] + list(FACILITY_GROUPS) + ["분류 확인 필요"]
                         if st.session_state.get("result_facility") not in options:
                             st.session_state.result_facility = "전체"
                         selection = st.selectbox("결과 내 분류", options, key="result_facility",
                                                  on_change=reset_result_page)
                     if selection != "전체":
-                        visible_results = [item for item in visible_results if result_facility_label(item) == selection]
+                        if selection == "분류 확인 필요":
+                            visible_results = [item for item in visible_results if not any(
+                                any(word in str(item.get("facility_type") or "") for word in words)
+                                for words in FACILITY_GROUPS.values())]
+                        else:
+                            visible_results = [item for item in visible_results if any(
+                                word in str(item.get("facility_type") or "") for word in FACILITY_GROUPS[selection])]
                     with count_slot:
                         st.markdown(f'<div class="cp-result-title">주변 충전소 <b>{len(visible_results):,}곳</b></div>',
                                     unsafe_allow_html=True)
@@ -1004,7 +1009,7 @@ def render_search() -> None:
             with st.container(key="map_view"):
                 st.iframe(build_map_html(visible_results, request,
                                         st.session_state.get("selected_station_id"), availability_label,
-                                        quality_notices=st.session_state.quality_notices),
+                                        quality_notices=quality_notices),
                           height=735, alt="카카오 지도 기반 충전소 위치와 충전 상태")
     render_chat()
 
