@@ -34,6 +34,12 @@ def require_session(authorization: str | None = Header(default=None)) -> AuthSes
     return authenticator.require(authorization)
 
 
+def require_operator(session: AuthSession = Depends(require_session)) -> AuthSession:
+    if session.role not in {"JUNIOR_ADMIN", "SENIOR_ADMIN"}:
+        raise HTTPException(status_code=403, detail="관리자 전용 기능입니다.")
+    return session
+
+
 @app.post("/api/v1/auth/login", response_model=AuthLoginResponse)
 def login(body: AuthLoginInput) -> AuthLoginResponse:
     token, session = authenticator.login(body.service_key)
@@ -79,6 +85,26 @@ def get_search(request_id: str, _session: AuthSession = Depends(require_session)
     return result
 
 
+@app.get("/api/v1/ops/summary")
+def operations_summary(_session: AuthSession = Depends(require_operator)):
+    return orchestrator.operations_summary()
+
+
+@app.post("/api/v1/ops/requests/{request_id}/retry")
+def retry_request(request_id: str, session: AuthSession = Depends(require_operator)):
+    try:
+        return orchestrator.retry_request(request_id, session.role)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail="재처리할 검색 요청을 찾지 못했습니다.") from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@app.post("/api/v1/ops/cache/refresh")
+def refresh_cache(session: AuthSession = Depends(require_operator)):
+    return orchestrator.refresh_provider_cache(session.role)
+
+
 _BOOM_SCENARIOS = {
     1: (200, "NO_RESULTS", "조건에 맞는 충전소를 찾지 못했습니다."),
     2: (200, "DATA_DELAYED", "충전 상태 정보가 지연되고 있습니다."),
@@ -89,10 +115,11 @@ _BOOM_SCENARIOS = {
 
 
 @app.get("/boom/{scenario}")
-def boom(scenario: int, _session: AuthSession = Depends(require_session)):
+def boom(scenario: int, session: AuthSession = Depends(require_session)):
     if not TEST_SCENARIOS_ENABLED:
         raise HTTPException(status_code=404, detail="테스트 시나리오는 이 환경에서 비활성화되어 있습니다.")
     if scenario not in _BOOM_SCENARIOS:
         raise HTTPException(status_code=404, detail="시나리오는 1~5만 지원합니다.")
     status_code, code, message = _BOOM_SCENARIOS[scenario]
+    orchestrator.record_test_scenario(scenario, code, status_code, session.role)
     return JSONResponse(status_code=status_code, content={"test_only": True, "scenario": scenario, "code": code, "message": message})

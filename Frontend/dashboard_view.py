@@ -146,6 +146,75 @@ def request_history_table(observed: list[dict[str, Any]]) -> None:
     st.dataframe(pd.DataFrame(records), hide_index=True, width="stretch", height=240)
 
 
+def ops_metrics(operations: dict[str, Any] | None) -> dict[str, int]:
+    raw = operations.get("metrics", {}) if isinstance(operations, dict) else {}
+    return {
+        key: int(raw.get(key) or 0)
+        for key in ("search_count", "completed_count", "degraded_count", "guardrail_block_count", "retry_count", "quality_issue_count")
+    }
+
+
+def ops_events(operations: dict[str, Any] | None, event_type: str | None = None) -> list[dict[str, Any]]:
+    raw = operations.get("recent_events", []) if isinstance(operations, dict) else []
+    if not isinstance(raw, list):
+        return []
+    rows = [item for item in raw if isinstance(item, dict)]
+    return [item for item in rows if item.get("event_type") == event_type] if event_type else rows
+
+
+def server_operation_table(events: list[dict[str, Any]], empty: str) -> None:
+    if not events:
+        st.caption(empty)
+        return
+    records = []
+    for event in events[:20]:
+        detail = event.get("code") or event.get("reason") or event.get("provider")
+        if not detail and int(event.get("quality_issue_count") or 0) > 0:
+            detail = f"품질 이슈 {event['quality_issue_count']}건"
+        records.append({
+            "시각 (KST)": display_time(event_time(event.get("occurred_at")), full=True),
+            "유형": event.get("event_type", "—"),
+            "상태": event.get("status", "—"),
+            "세부": detail or "—",
+            "요청 ID": event.get("request_id", "—"),
+            "결과": event.get("result_count", "—"),
+            "재처리": event.get("retry_count", "—"),
+        })
+    st.dataframe(pd.DataFrame(records), hide_index=True, width="stretch", height=240)
+
+
+def server_provider_states(operations: dict[str, Any] | None) -> list[tuple[str, str]]:
+    providers = operations.get("providers", []) if isinstance(operations, dict) else []
+    states: list[tuple[str, str]] = []
+    for provider in providers:
+        if isinstance(provider, dict):
+            states.append((str(provider.get("name", "외부 연결")), str(provider.get("status", "확인 필요"))))
+    return states
+
+
+def backend_overview(operations: dict[str, Any] | None, error: str | None = None) -> None:
+    if not operations:
+        st.info(error or "백엔드 운영 이력을 불러오지 못했습니다.")
+        return
+    metrics = ops_metrics(operations)
+    success_rate = "—"
+    if metrics["search_count"]:
+        success_rate = f'{metrics["completed_count"] / metrics["search_count"] * 100:.0f}%'
+    with st.container(border=True, key="backend_overview"):
+        section_title("백엔드 운영 이력", "프로세스 시작 후 · 원문 대화·키 미저장")
+        columns = st.columns(5, gap="small")
+        values = [
+            ("검색", f'{metrics["search_count"]:,}건'),
+            ("정상 응답", success_rate),
+            ("부분 응답", f'{metrics["degraded_count"]:,}건'),
+            ("가드레일 차단", f'{metrics["guardrail_block_count"]:,}건'),
+            ("재처리", f'{metrics["retry_count"]:,}회'),
+        ]
+        for column, (title, value) in zip(columns, values):
+            with column:
+                st.metric(title, value)
+
+
 def pipeline_snapshot(reference: dict[str, Any], compact: bool = False) -> None:
     stages = reference.get("stages", [])
     if not stages:
@@ -179,7 +248,9 @@ def overview_summary(title: str, scope: str, values: list[tuple[str, str]],
                 '<div class="cp-summary-note">' + label(note) + '</div></section>', unsafe_allow_html=True)
 
 
-def overview(data: dict[str, Any], health: str, providers: list[tuple[str, str]], reference: dict[str, Any]) -> None:
+def overview(data: dict[str, Any], health: str, providers: list[tuple[str, str]], reference: dict[str, Any],
+             operations: dict[str, Any] | None, operations_error: str | None) -> None:
+    backend_overview(operations, operations_error)
     counts = {item["kind"]: item["count"] for item in data["kind_counts"]}
     choices = ["요청 정보", "서비스 안정성", "빌드·배포"]
     if st.session_state.get("overview_axis") not in choices:
@@ -233,7 +304,7 @@ def overview(data: dict[str, Any], health: str, providers: list[tuple[str, str]]
 
 
 
-def flow_view(data: dict[str, Any]) -> None:
+def flow_view(data: dict[str, Any], operations: dict[str, Any] | None, api: Any, access_token: str) -> None:
     counts = {row["kind"]: row["count"] for row in data["kind_counts"]}
     kpis = [
         ("장소 조회", f'{counts.get("장소 조회", 0):,}건', "현재 세션", "neutral"),
@@ -267,20 +338,45 @@ def flow_view(data: dict[str, Any]) -> None:
                 st.markdown(
                     '<div class="cp-flow-pills"><span>요청</span><i>›</i><span>계획</span><i>›</i>'
                     '<span>조회</span><i>›</i><span>검증</span><i>›</i><span>응답</span></div>'
-                    '<div class="cp-inline-note">에이전트별 처리 이력 · Handoff 연결 대기</div>',
+                    '<div class="cp-inline-note">Planner → Executor → Critic → Memory Keeper · 서버 운영 이력</div>',
                     unsafe_allow_html=True)
+                server_operation_table(ops_events(operations), "서버 처리 이력이 아직 없어요.")
     with st.expander("요청 이력 자세히", expanded=False):
-        st.caption("현재 세션 · 최근 20건 · 소요 시간은 프론트 왕복 기준")
-        request_history_table(data["observed"])
+        st.caption("백엔드 최근 20건 · 대화 원문과 비밀 정보는 저장하지 않습니다.")
+        server_operation_table(ops_events(operations, "search"), "검색 실행 이력이 아직 없어요.")
+        retryable = []
+        seen_request_ids: set[str] = set()
+        for event in ops_events(operations, "search"):
+            request_id = event.get("request_id")
+            if not isinstance(request_id, str) or request_id in seen_request_ids:
+                continue
+            seen_request_ids.add(request_id)
+            if int(event.get("retry_count") or 0) < 2:
+                retryable.append(event)
+        if retryable:
+            selected_id = st.selectbox(
+                "재처리할 검색 요청",
+                [str(event["request_id"]) for event in retryable],
+                key="retry_request_id",
+            )
+            if st.button("선택 요청 재처리", type="primary", key="retry_request"):
+                try:
+                    response = api.retry_search(selected_id, access_token)
+                    st.success(f"재처리를 완료했습니다. 결과 {len(response.get('results', []))}곳")
+                    st.rerun()
+                except ApiError as error:
+                    st.error(error.message)
 
 
-def system_view(data: dict[str, Any], health: str, providers: list[tuple[str, str]]) -> None:
+def system_view(data: dict[str, Any], health: str, providers: list[tuple[str, str]],
+                operations: dict[str, Any] | None, api: Any, access_token: str) -> None:
+    metrics = ops_metrics(operations)
     elapsed = "—" if data["average_ms"] is None else f'{data["average_ms"]:,} ms'
     cards = [
         ("백엔드 연결", health, "/healthz 응답", "good" if health == "정상" else "bad" if health == "연결 불가" else "warn"),
         ("검색 평균 응답", elapsed, "프론트 왕복 · 현재 세션", "neutral"),
-        ("요청 실패", f'{data["failure_count"]:,}건', "검색 요청 · 현재 세션", "bad" if data["failure_count"] else "neutral"),
-        ("자동 복구", "연결 대기", "감지 · 조치 이력", "neutral"),
+        ("부분 응답", f'{metrics["degraded_count"]:,}건', "백엔드 검색 실행", "bad" if metrics["degraded_count"] else "neutral"),
+        ("가드레일 차단", f'{metrics["guardrail_block_count"]:,}건', "백엔드 감사 이력", "warn" if metrics["guardrail_block_count"] else "neutral"),
     ]
     with st.container(key="system_kpis"):
         for col, item in zip(st.columns(4, gap="medium"), cards):
@@ -298,25 +394,39 @@ def system_view(data: dict[str, Any], health: str, providers: list[tuple[str, st
                 line_chart(points, "elapsed_ms", "ms", "검색 응답 시간이 기록되면 표시해요")
         with right:
             with st.container(border=True, key="system_sources"):
-                section_title("외부 연결", "키 설정 · 세션 응답")
+                section_title("외부 연결", "키 설정 · 캐시 상태")
                 provider_rows(providers)
     with st.container(key="system_details"):
         left, right = st.columns(2, gap="medium")
         with left:
             with st.container(border=True, key="system_recovery"):
                 section_title("재시도 · 복구")
-                st.markdown('<div class="cp-inline-note">감지 시각 · 재시도 원인 · 복구 소요 시간 · 수동 개입</div>',
-                            unsafe_allow_html=True)
-                empty_chart("복구 이력 연결 대기")
+                st.markdown('<div class="cp-inline-note">수동 재처리·시연 장애 이력</div>', unsafe_allow_html=True)
+                server_operation_table(
+                    [event for event in ops_events(operations) if event.get("event_type") in {"retry", "test_scenario"}],
+                    "재처리·장애 이력이 아직 없어요.",
+                )
+                if st.button("환경공단 캐시 갱신", key="cache_refresh"):
+                    try:
+                        api.refresh_cache(access_token)
+                        st.success("캐시를 초기화했습니다. 다음 검색에서 최신 환경공단 정보를 다시 받습니다.")
+                        st.rerun()
+                    except ApiError as error:
+                        st.error(error.message)
         with right:
             with st.container(border=True, key="system_quality"):
                 section_title("데이터 품질")
                 st.markdown('<div class="cp-inline-note">정보 지연 · 누락 · 응답 검증</div>', unsafe_allow_html=True)
-                empty_chart("품질 집계 연결 대기")
+                server_operation_table(
+                    [event for event in ops_events(operations, "search") if int(event.get("quality_issue_count") or 0) > 0],
+                    "품질 이슈가 기록되지 않았어요.",
+                )
     with st.expander("연결 · 장애 상세", expanded=False):
-        st.caption("원천 API별 재시도와 복구 이력은 서버 관측 정보 연결 후 표시합니다.")
+        st.caption("서버가 보관한 안전한 운영 요약입니다. 원문 대화·API 키는 표시하지 않습니다.")
         provider_rows(providers)
-        st.markdown('<div class="cp-inline-note">회로 상태 · 재시도 원인 · 수동 조치 · 감사 이력: 연결 대기</div>',
+        cache = operations.get("cache", {}) if isinstance(operations, dict) else {}
+        st.markdown('<div class="cp-inline-note">환경공단 캐시 · 정보 캐시 ' + label(cache.get("info_cache_entries", 0))
+                    + '건 · 상태 캐시 ' + ("준비됨" if cache.get("status_cache_ready") else "미생성") + '</div>',
                     unsafe_allow_html=True)
 
 
@@ -434,7 +544,7 @@ def management_menu() -> None:
             senior_only_dialog()
 
 
-def render_operations_dashboard(api: Any, header: Callable[..., str | None],
+def render_operations_dashboard(api: Any, access_token: str, header: Callable[..., str | None],
                                 providers: Callable[[], list[tuple[str, str]]],
                                 reference_loader: Callable[[], dict[str, Any]]) -> None:
     def navigation() -> str | None:
@@ -451,6 +561,12 @@ def render_operations_dashboard(api: Any, header: Callable[..., str | None],
         health = "정상" if result.get("status") == "ok" else "확인 필요"
     except ApiError:
         health = "연결 불가"
+    try:
+        operations = api.operations_summary(access_token)
+        operations_error = None
+    except ApiError as error:
+        operations = None
+        operations_error = error.message
     heading = {"운영 개요": "운영 현황", "요청 정보": "요청 정보",
                "서비스 안정성": "서비스 안정성", "빌드·배포": "빌드·배포"}.get(menu, "운영 현황")
     with st.container(key="dashboard_page_heading"):
@@ -474,14 +590,14 @@ def render_operations_dashboard(api: Any, header: Callable[..., str | None],
     cutoff = datetime.now(KST) - timedelta(hours={"1시간": 1, "24시간": 24, "7일": 168}[period])
     events = [event for event in st.session_state.get("api_events", []) if event_time(event.get("observed_at")) is not None and event_time(event.get("observed_at")) >= cutoff]
     data = summarize_events(events)
-    states = providers()
+    states = server_provider_states(operations) or providers()
     reference = reference_loader()
     with st.container(key="operations_content"):
         if menu == "운영 개요":
-            overview(data, health, states, reference)
+            overview(data, health, states, reference, operations, operations_error)
         elif menu == "요청 정보":
-            flow_view(data)
+            flow_view(data, operations, api, access_token)
         elif menu == "서비스 안정성":
-            system_view(data, health, states)
+            system_view(data, health, states, operations, api, access_token)
         else:
             cicd_view(reference)

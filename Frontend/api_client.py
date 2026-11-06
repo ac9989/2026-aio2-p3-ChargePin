@@ -106,5 +106,15 @@ class ChargePinApi:
     def confirm(self, request_id: str, access_token: str, candidate_id: str | None = None) -> dict[str, Any]:
         return self._request("POST", f"/search/{request_id}/confirm", json={"confirmed": True, "candidate_id": candidate_id}, access_token=access_token)
 
+    def operations_summary(self, access_token: str) -> dict[str, Any]:
+        payload = self._request("GET", "/ops/summary", access_token=access_token)
+        return payload if isinstance(payload, dict) else {}
+
+    def retry_search(self, request_id: str, access_token: str) -> dict[str, Any]:
+        return self._request("POST", f"/ops/requests/{request_id}/retry", access_token=access_token)
+
+    def refresh_cache(self, access_token: str) -> dict[str, Any]:
+        return self._request("POST", "/ops/cache/refresh", access_token=access_token)
+
     def boom(self, scenario: int, access_token: str) -> dict[str, Any]:
         return self._request("GET", f"/boom/{scenario}", access_token=access_token, root_url=True)

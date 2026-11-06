@@ -695,31 +695,22 @@ def render_direct_search() -> None:
             st.error(error.message)
 
 
-def complete_chat_search(plan: dict[str, Any]) -> None:
-    candidate_id = plan.get("suggested_candidate_id")
+def complete_chat_search(plan: dict[str, Any], candidate_id: str | None = None) -> None:
+    candidate_id = candidate_id or plan.get("suggested_candidate_id")
     candidates = plan.get("candidates", [])
     if plan.get("status") == "AWAITING_LOCATION_CONFIRMATION" and not candidate_id:
-        candidate_id = candidates[0]["candidate_id"] if candidates else None
+        candidate_id = plan.get("suggested_candidate_id")
+        if not candidate_id and candidates:
+            candidate_id = candidates[0].get("candidate_id")
         if not candidate_id:
             st.session_state.pending_plan = None
             st.session_state.chat.append({"role": "assistant", "content": "검색할 장소를 찾지 못했어요. 역 이름이나 주소를 알려주세요."})
             return
     st.session_state.pending_plan = None
     response = API.confirm(plan["request_id"], access_token(), candidate_id)
-    last_message = next((str(item.get("content", "")) for item in reversed(st.session_state.chat)
-                         if item.get("role") == "user"), "")
-    explicit_distance = re.search(r"\d+(?:\.\d+)?\s*(?:km|킬로미터|킬로|키로|미터|m\b)", last_message, re.IGNORECASE)
-    applied = response.get("applied_request") or {}
-    center = applied.get("center") or {}
-    try:
-        server_radius = float(applied.get("radius_km", 0))
-    except (TypeError, ValueError):
-        server_radius = 0
-    if not explicit_distance and server_radius > 0.5 and "lat" in center and "lng" in center:
-        response = apply_search_radius(response, center, 0.5)
     set_search_response(response)
     selected = next((item for item in candidates if item["candidate_id"] == candidate_id), None)
-    location = f"{selected['name']} 주변" if selected else "입력한 지역 주변"
+    location = f"{selected['name']} 주변" if selected else "선택한 장소 주변"
     count = len(st.session_state.results)
     if response.get("status") == "degraded":
         findings = response.get("critic_findings") or []
@@ -731,6 +722,40 @@ def complete_chat_search(plan: dict[str, Any]) -> None:
     else:
         message = f"{location}에서 조건에 맞는 충전소를 찾지 못했어요."
     st.session_state.chat.append({"role": "assistant", "content": message})
+
+
+def render_chat_confirmation(plan: dict[str, Any]) -> None:
+    """Show the original Planner draft and wait for an explicit user decision."""
+    st.info(str(plan.get("message") or "검색 조건을 확인해 주세요."))
+    status = plan.get("status")
+    candidates = plan.get("candidates") or []
+    if status == "AWAITING_LOCATION_CONFIRMATION":
+        st.caption("카카오 장소 후보입니다. 검색할 장소를 선택해 주세요.")
+        for index, candidate in enumerate(candidates):
+            suffix = " · 추천" if candidate.get("candidate_id") == plan.get("suggested_candidate_id") else ""
+            label = f"{candidate.get('name', '장소')} · {candidate.get('address', '주소 확인 필요')}{suffix}"
+            if st.button(label, key=f"chat_candidate_{plan['request_id']}_{index}", use_container_width=True):
+                try:
+                    complete_chat_search(plan, str(candidate.get("candidate_id") or ""))
+                    st.session_state.reset_search_filters = True
+                    st.rerun()
+                except ApiError as error:
+                    st.error(error.message)
+        return
+    confirm, retry = st.columns(2)
+    with confirm:
+        if st.button("이 조건으로 검색", type="primary", key=f"chat_confirm_{plan['request_id']}", use_container_width=True):
+            try:
+                complete_chat_search(plan)
+                st.session_state.reset_search_filters = True
+                st.rerun()
+            except ApiError as error:
+                st.error(error.message)
+    with retry:
+        if st.button("다시 입력", key=f"chat_retry_{plan['request_id']}", use_container_width=True):
+            st.session_state.pending_plan = None
+            st.session_state.chat.append({"role": "assistant", "content": "다른 장소나 조건을 말씀해 주세요."})
+            st.rerun()
 
 
 def render_chat() -> None:
@@ -759,20 +784,15 @@ def render_chat() -> None:
                     st.markdown(item["content"])
         pending = st.session_state.pending_plan
         if pending and pending.get("status") in ("AWAITING_CONFIRMATION", "AWAITING_LOCATION_CONFIRMATION"):
-            try:
-                complete_chat_search(pending)
-                st.session_state.reset_search_filters = True
-            except ApiError as error:
-                st.session_state.chat.append({"role": "assistant", "content": error.message})
-            st.rerun()
+            render_chat_confirmation(pending)
+            return
         prompt = st.chat_input("강남역처럼 장소만 입력해도 가능해요", key="floating_chat_input")
         if prompt:
             st.session_state.chat.append({"role": "user", "content": prompt})
             try:
                 response = API.plan(prompt, access_token())
                 if response.get("status") in ("AWAITING_CONFIRMATION", "AWAITING_LOCATION_CONFIRMATION"):
-                    complete_chat_search(response)
-                    st.session_state.reset_search_filters = True
+                    st.session_state.pending_plan = response
                 else:
                     st.session_state.pending_plan = None
                     st.session_state.chat.append({"role": "assistant", "content": response["message"]})
@@ -933,7 +953,7 @@ def render_dashboard() -> None:
     allowed = ["운영 개요", "요청 정보", "서비스 안정성", "빌드·배포"]
     if st.session_state.get("dashboard_navigation") not in allowed:
         st.session_state.dashboard_navigation = allowed[0]
-    render_operations_dashboard(API, render_header, provider_states, load_deployment_reference)
+    render_operations_dashboard(API, access_token(), render_header, provider_states, load_deployment_reference)
 
 
 def result_facility_label(station: dict[str, Any]) -> str:

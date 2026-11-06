@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 import os
 import re
+from time import perf_counter
 from typing import Any, Literal
 import unicodedata
 from uuid import uuid4
@@ -156,6 +157,25 @@ Rules:
         value = re.sub(r"(?:에서|으로|로|에)$", "", value).strip()
         return value
 
+    @classmethod
+    def _explicit_location_from_message(cls, message: str) -> str:
+        """Return a newly named place, or an empty string for condition-only follow-ups.
+
+        The model may see a trusted previous-search summary, but it is never allowed
+        to replace a place the user typed in the current turn.  This small server-side
+        check makes that rule deterministic for short inputs such as ``서울`` and
+        ``선릉`` as well as a longer place-and-condition request.
+        """
+        value = cls._location_query(message)
+        value = re.sub(
+            r"(?:그|여기|현재|이전|방금|만|로|으로|바꿔|변경|다시|그대로|"
+            r"조건|설정|범위|거리|에서|에|해|줘|주세요)",
+            " ",
+            value,
+        )
+        value = re.sub(r"\s+", " ", value).strip()
+        return value if len(value) >= 2 else ""
+
     @staticmethod
     def _has_out_of_range_value(message: str) -> bool:
         """Reject an explicit unsupported distance before any model/provider call."""
@@ -165,6 +185,49 @@ Rules:
             flags=re.IGNORECASE,
         )
         return any(float(value.replace(",", ".")) not in {1, 2, 3} for value in values)
+
+    @staticmethod
+    def _explicit_search_diameter(message: str) -> int | None:
+        """Return an explicitly typed km value, leaving no-value inputs as None."""
+        values = re.findall(
+            r"(\d+(?:[.,]\d+)?)\s*(?:km|킬로미터|킬로|키로)",
+            message.replace(" ", ""),
+            flags=re.IGNORECASE,
+        )
+        if not values:
+            return None
+        value = float(values[-1].replace(",", "."))
+        return int(value) if value.is_integer() else None
+
+    @staticmethod
+    def _has_condition_change(message: str) -> bool:
+        """Recognize a condition-only follow-up without trusting the model flag."""
+        return bool(re.search(
+            r"(?:\d+(?:[.,]\d+)?\s*(?:km|킬로미터|킬로|키로)|급속|완속|"
+            r"반경|범위|거리|조건|바꿔|변경|다시|그대로)",
+            message,
+            flags=re.IGNORECASE,
+        ))
+
+    @classmethod
+    def _requires_llm(cls, message: str, previous_context: dict[str, Any] | None) -> bool:
+        """Use the model only for context-dependent or genuinely natural wording.
+
+        Plain place searches (for example ``선릉`` or ``서울 2km 급속``) retain
+        the original low-latency rule Planner.  A condition-only follow-up needs
+        the trusted previous-search summary, and Korean number/vague wording needs
+        natural-language extraction, so only those messages take the LLM path.
+        """
+        explicit_location = cls._explicit_location_from_message(message)
+        if not explicit_location and previous_context and cls._has_condition_change(message):
+            return True
+        return bool(re.search(
+            r"(?:한|두|세|하나|둘|셋)\s*(?:킬로미터|킬로|키로)|"
+            r"(?:정도|쯤|가까운|넓게|더\s*(?:넓|가깝)|조건\s*(?:을|만)?\s*(?:바꿔|변경)|"
+            r"그\s*(?:조건|장소|근처)|이전\s*(?:조건|장소))",
+            message,
+            flags=re.IGNORECASE,
+        ))
 
     def _rule_draft(self, message: str, engine: str) -> tuple[PlanIntent | None, str, bool]:
         compact = message.replace(" ", "")
@@ -182,7 +245,8 @@ Rules:
         if len(location_text) < 2:
             return None, "location_missing", False
 
-        # Broad area names require an explicit user choice after Kakao ranking.
+        # Keep the original Planner flow: broad area names need a Kakao top-two
+        # choice, while a concrete place is proposed first and awaits confirmation.
         ambiguous = location_text in {"서울", "강남"}
         if ambiguous:
             return PlanIntent(location_text=location_text, radius_km=radius, connector_types=connector_types, planner_engine=engine), "location_ambiguous", True
@@ -224,24 +288,48 @@ Rules:
     def _intent_from_llm(
         self,
         extraction: LlmPlannerExtraction,
+        message: str,
         previous_context: dict[str, Any] | None = None,
     ) -> tuple[PlanIntent | None, str, bool]:
-        if extraction.range_status != "VALID" or extraction.search_diameter_km not in {1, 2, 3}:
-            return None, "range_out_of_bounds", False
-        location_text = self._location_query(extraction.location_text)
-        if extraction.use_previous_location and previous_context:
+        explicit_diameter = self._explicit_search_diameter(message)
+        if explicit_diameter is not None:
+            # `draft` already rejects unsupported numeric values before the model is
+            # invoked. Keep this defensive check for direct unit-level callers.
+            if explicit_diameter not in {1, 2, 3}:
+                return None, "range_out_of_bounds", False
+            diameter = explicit_diameter
+        elif extraction.range_status == "VALID" and extraction.search_diameter_km in {1, 2, 3}:
+            # Supports natural wording such as "두 키로" that has no numeric token.
+            diameter = extraction.search_diameter_km
+        else:
+            # A bare place name always uses the product default: displayed 1 km,
+            # provider radius 0.5 km. A model cannot turn that into an error.
+            diameter = 1
+        explicit_location = self._explicit_location_from_message(message)
+        # A current place name always wins over model-proposed context reuse.  The
+        # context can only be used for a condition-only follow-up such as
+        # "반경 2km로 급속만 바꿔줘".
+        using_previous_location = (
+            not explicit_location
+            and previous_context is not None
+            and (extraction.use_previous_location or self._has_condition_change(message))
+        )
+        location_text = explicit_location or self._location_query(extraction.location_text)
+        if using_previous_location and previous_context:
             previous_location = previous_context.get("location_text")
             if isinstance(previous_location, str):
                 location_text = self._location_query(previous_location)
         if len(location_text) < 2:
             return None, "location_missing", False
         connector_types = list(dict.fromkeys(ConnectorType(value) for value in extraction.connector_types))
-        radius = extraction.search_diameter_km / 2
-        # A previously confirmed candidate is already a concrete place. Do not ask for
-        # candidates again merely because a condition-only follow-up omits the location.
-        using_previous_location = extraction.use_previous_location and previous_context is not None
+        radius = diameter / 2
+        # Preserve the original deterministic Planner policy for candidate choice.
+        # The model may help with natural language, but it does not decide which
+        # place is "broad" or override a current explicit place name.
         ambiguous = location_text in {"서울", "강남"} or (
-            extraction.needs_location_clarification and not using_previous_location
+            not explicit_location
+            and extraction.needs_location_clarification
+            and not using_previous_location
         )
         status = "location_ambiguous" if ambiguous else "ready"
         return PlanIntent(
@@ -262,8 +350,14 @@ Rules:
             return None, "range_out_of_bounds", False
         if not self._api_key:
             return self._rule_draft(message, engine="rule_no_openai_key")
+        if not self._requires_llm(message, previous_context):
+            return self._rule_draft(message, engine="rule_fast_path")
         try:
-            return self._intent_from_llm(self._llm_extract(message, previous_context), previous_context)
+            return self._intent_from_llm(
+                self._llm_extract(message, previous_context),
+                message,
+                previous_context,
+            )
         except Exception:
             # A configured model error does not reach Executor and exposes no provider/API details.
             return None, "llm_plan_error", False
@@ -278,6 +372,12 @@ class Executor:
 
     def place_candidates(self, location_text: str) -> list[PlaceCandidate]:
         return self._places.top_two(location_text)[:2]
+
+    def cache_snapshot(self) -> dict[str, int | bool]:
+        return self._chargers.cache_snapshot()
+
+    def refresh_cache(self) -> None:
+        self._chargers.clear_cache()
 
     def execute(self, request: SearchRequest) -> list[ChargerResult]:
         results: list[ChargerResult] = []
@@ -355,6 +455,8 @@ class Critic:
 
 
 class SearchOrchestrator:
+    max_manual_retries = 2
+
     def __init__(self) -> None:
         self.memory = MemoryKeeper()
         self.input_guardrail = InputGuardrail()
@@ -370,16 +472,93 @@ class SearchOrchestrator:
         return SearchRequest(request_id=request_id, origin=origin, requested_at=kst_now(), user_confirmed=confirmed, **data.model_dump())
 
     def _run(self, request: SearchRequest) -> SearchResponse:
+        started = perf_counter()
         self.memory.update(request.request_id, execution_plan={"providers": ["KAKAO_PLACE", "KECO_EV"], "attempt_no": 1})
+        provider_error: ProviderError | None = None
         try:
             results = self.executor.execute(request)
             decision, findings, status = self.critic.review(results)
         except ProviderError as error:
+            provider_error = error
             results = []
             decision, findings, status = "SAFE_UNAVAILABLE", [error.user_message], "degraded"
         response = SearchResponse(request_id=request.request_id, status=status, applied_request=request, results=results, critic_decision=decision, critic_findings=findings)
         self.memory.save_result(request.request_id, response.model_dump(mode="json"))
+        handoff = self.memory.handoffs.get(request.request_id, {})
+        self.memory.record_operation(
+            "search",
+            status,
+            request_id=request.request_id,
+            origin=request.origin.value,
+            duration_ms=round((perf_counter() - started) * 1000),
+            result_count=len(results),
+            critic_decision=decision,
+            quality_issue_count=len(findings),
+            retry_count=len(handoff.get("retry_history", [])),
+            provider=provider_error.provider if provider_error else None,
+        )
         return response
+
+    def retry_request(self, request_id: str, user_role: str) -> SearchResponse:
+        handoff = self.memory.handoffs.get(request_id)
+        if handoff is None or "search_request" not in handoff:
+            raise KeyError(request_id)
+        if len(handoff.get("retry_history", [])) >= self.max_manual_retries:
+            raise ValueError("이 요청은 재처리 가능 횟수(최대 2회)를 모두 사용했습니다.")
+        request = SearchRequest.model_validate(handoff["search_request"])
+        request.requested_at = kst_now()
+        request.user_confirmed = True
+        attempt = self.memory.add_retry(request_id, "operator_reprocess")
+        self.memory.record_operation("retry", "requested", request_id=request_id, attempt=attempt, actor_role=user_role)
+        return self._run(request)
+
+    def refresh_provider_cache(self, user_role: str) -> dict[str, int | bool | str]:
+        self.executor.refresh_cache()
+        snapshot = self.executor.cache_snapshot()
+        self.memory.record_operation("cache_refresh", "completed", actor_role=user_role, **snapshot)
+        return {"status": "completed", **snapshot}
+
+    def record_test_scenario(self, scenario: int, code: str, http_status: int, user_role: str) -> None:
+        status = "completed" if http_status < 400 else "failed"
+        self.memory.record_operation(
+            "test_scenario",
+            status,
+            scenario=scenario,
+            code=code,
+            http_status=http_status,
+            actor_role=user_role,
+        )
+
+    def operations_summary(self) -> dict[str, Any]:
+        events = list(self.memory.operation_events)
+        search_events = [event for event in events if event.get("event_type") == "search"]
+        quality_events = [event for event in search_events if int(event.get("quality_issue_count") or 0) > 0]
+        guardrail_count = sum(
+            1 for handoff in self.memory.handoffs.values()
+            if "guardrail_blocked" in handoff.get("audit_events", [])
+        )
+        retry_count = sum(len(handoff.get("retry_history", [])) for handoff in self.memory.handoffs.values())
+        provider_errors = [event for event in search_events if event.get("provider")]
+        return {
+            "scope": "backend_process",
+            "metrics": {
+                "search_count": len(search_events),
+                "completed_count": sum(event.get("status") == "completed" for event in search_events),
+                "degraded_count": sum(event.get("status") == "degraded" for event in search_events),
+                "guardrail_block_count": guardrail_count,
+                "retry_count": retry_count,
+                "quality_issue_count": len(quality_events),
+            },
+            "providers": [
+                {"name": "카카오 장소", "status": "설정됨" if bool(self.executor._places._key) else "키 미설정"},
+                {"name": "환경공단 충전기", "status": "설정됨" if bool(self.executor._chargers._service_key) else "키 미설정"},
+                {"name": "Planner LLM", "status": "설정됨" if bool(self.planner._api_key) else "규칙 기반"},
+                {"name": "환경공단 캐시", "status": "사용 중", **self.executor.cache_snapshot()},
+            ],
+            "recent_events": list(reversed(events[-20:])),
+            "recent_provider_errors": list(reversed(provider_errors[-10:])),
+            "cache": self.executor.cache_snapshot(),
+        }
 
     def default_search(self, user_role: str) -> SearchResponse:
         request_id = self._request_id()
@@ -409,6 +588,12 @@ class SearchOrchestrator:
                 "guardrail": {"decision": "BLOCKED", "category": guardrail.category},
             })
             self.memory.record_audit(request_id, "guardrail_blocked")
+            self.memory.record_operation(
+                "guardrail",
+                "blocked",
+                request_id=request_id,
+                category=guardrail.category,
+            )
             return ChatPlanResponse(
                 request_id=request_id,
                 status="BLOCKED",
@@ -425,6 +610,7 @@ class SearchOrchestrator:
         })
         if status == "llm_plan_error":
             self.memory.record_audit(request_id, "llm_plan_error")
+            self.memory.record_operation("planner", "failed", request_id=request_id, reason="llm_plan_error")
             return ChatPlanResponse(
                 request_id=request_id,
                 status="NEEDS_INPUT",
@@ -432,6 +618,7 @@ class SearchOrchestrator:
             )
         if status == "range_out_of_bounds":
             self.memory.record_audit(request_id, "search_range_out_of_bounds")
+            self.memory.record_operation("planner", "rejected", request_id=request_id, reason="range_out_of_bounds")
             return ChatPlanResponse(
                 request_id=request_id,
                 status="NEEDS_INPUT",
@@ -446,7 +633,7 @@ class SearchOrchestrator:
             except ProviderError as error:
                 return ChatPlanResponse(request_id=request_id, status="NEEDS_INPUT", message=error.user_message)
             if not candidates:
-                return ChatPlanResponse(request_id=request_id, status="NEEDS_INPUT", message="장소 후보를 찾지 못했습니다. 다른 서울 장소를 알려 주세요.")
+                return ChatPlanResponse(request_id=request_id, status="NEEDS_INPUT", message="서울 안의 장소 후보를 찾지 못했습니다. 서울 지역의 장소를 입력해 주세요.")
             self.memory.update(
                 request_id,
                 candidates=[candidate.model_dump(mode="json") for candidate in candidates],
@@ -465,7 +652,7 @@ class SearchOrchestrator:
         except ProviderError as error:
             return ChatPlanResponse(request_id=request_id, status="NEEDS_INPUT", message=error.user_message)
         if not candidates:
-            return ChatPlanResponse(request_id=request_id, status="NEEDS_INPUT", message="장소 후보를 찾지 못했습니다. 다른 서울 장소를 알려 주세요.")
+            return ChatPlanResponse(request_id=request_id, status="NEEDS_INPUT", message="서울 안의 장소 후보를 찾지 못했습니다. 서울 지역의 장소를 입력해 주세요.")
         selected = candidates[0]
         request = self._build_request(
             request_id,

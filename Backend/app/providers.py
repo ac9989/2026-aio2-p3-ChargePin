@@ -18,6 +18,9 @@ KST = timezone(timedelta(hours=9))
 KECO_BASE_URL = "https://apis.data.go.kr/B552584/EvCharger"
 KAKAO_KEYWORD_URL = "https://dapi.kakao.com/v2/local/search/keyword.json"
 SEOUL_ZCODE = "11"
+# A generous Seoul envelope narrows Kakao's keyword search.  Address validation
+# below remains authoritative because a rectangle also crosses municipal borders.
+SEOUL_SEARCH_RECT = "126.734,37.413,127.269,37.715"
 DISTRICT_CODES = {
     "종로구": "11110", "중구": "11140", "용산구": "11170", "성동구": "11200", "광진구": "11215",
     "동대문구": "11230", "중랑구": "11260", "성북구": "11290", "강북구": "11305", "도봉구": "11320",
@@ -81,6 +84,12 @@ def district_code(address: str) -> str | None:
     return next((code for name, code in DISTRICT_CODES.items() if name in address), None)
 
 
+def is_seoul_address(address: str) -> bool:
+    """Accept only a provider address explicitly identified as Seoul."""
+    normalized = " ".join(str(address or "").split())
+    return normalized.startswith(("서울 ", "서울특별시 ", "서울시 ")) or normalized in {"서울", "서울특별시", "서울시"}
+
+
 def connector_type(chger_type: Any) -> ConnectorType | None:
     code = str(chger_type or "").zfill(2)
     if code in SLOW_TYPES:
@@ -105,9 +114,9 @@ class KakaoPlaceAdapter:
     def top_two(self, query: str) -> list[PlaceCandidate]:
         if not self._key:
             raise ProviderError("KAKAO", "카카오 장소 API 키가 설정되지 않았습니다.")
-        # Sidebar and chat candidates are the raw Kakao keyword-search ranking.
-        # Do not bias by an arbitrary city-centre coordinate, distance, or our own name filter.
-        params = urlencode({"query": query, "size": 2})
+        # Request enough candidates to discard non-Seoul matches before choosing
+        # the top two. `rect` reduces irrelevant nationwide keyword matches.
+        params = urlencode({"query": query, "rect": SEOUL_SEARCH_RECT, "size": 15})
         request = Request(f"{KAKAO_KEYWORD_URL}?{params}", headers={"Authorization": f"KakaoAK {self._key}", "Accept": "application/json"})
         try:
             with urlopen(request, timeout=7) as response:
@@ -125,7 +134,11 @@ class KakaoPlaceAdapter:
         for document in documents:
             if not isinstance(document, dict):
                 continue
-            address = str(document.get("road_address_name") or document.get("address_name") or "")
+            road_address = str(document.get("road_address_name") or "")
+            land_address = str(document.get("address_name") or "")
+            if not (is_seoul_address(road_address) or is_seoul_address(land_address)):
+                continue
+            address = road_address or land_address
             try:
                 location = Point(lat=float(document["y"]), lng=float(document["x"]), source="kakao_candidate")
             except (KeyError, TypeError, ValueError):
@@ -135,8 +148,10 @@ class KakaoPlaceAdapter:
                 category=str(document.get("category_name") or "장소"), address=address or "주소 확인 필요", location=location,
                 district_code=district_code(address),
             ))
+            if len(candidates) == 2:
+                break
         if not candidates:
-            raise ProviderError("KAKAO", "카카오 장소 후보를 찾지 못했습니다.")
+            raise ProviderError("KAKAO", "서울 안의 장소 후보를 찾지 못했습니다. 서울 지역의 장소를 입력해 주세요.")
         return candidates
 
 
@@ -150,6 +165,18 @@ class EnvironmentChargerAdapter:
         self._info_cache: dict[str, tuple[datetime, list[dict[str, Any]]]] = {}
         self._status_cache: tuple[datetime, dict[tuple[str, str], dict[str, Any]]] | None = None
         self._lock = Lock()
+
+    def cache_snapshot(self) -> dict[str, int | bool]:
+        with self._lock:
+            return {
+                "info_cache_entries": len(self._info_cache),
+                "status_cache_ready": self._status_cache is not None,
+            }
+
+    def clear_cache(self) -> None:
+        with self._lock:
+            self._info_cache.clear()
+            self._status_cache = None
 
     def _url(self, operation: str, params: dict[str, Any]) -> str:
         if not self._service_key:
@@ -247,6 +274,11 @@ class EnvironmentChargerAdapter:
         for item in self._info(self._zscode(search)):
             if str(item.get("delYn", "N")).upper() == "Y":
                 continue
+            address = str(item.get("addr") or item.get("location") or "")
+            # `zcode=11` is the source filter; retain this address check as a
+            # final boundary guard for radius searches near the Seoul border.
+            if not is_seoul_address(address):
+                continue
             try:
                 latitude, longitude = float(item["lat"]), float(item["lng"])
             except (KeyError, TypeError, ValueError):
@@ -263,7 +295,7 @@ class EnvironmentChargerAdapter:
             status = status_by_charger.get((station_id, charger_id), item)
             station = grouped.setdefault(station_id, {
                 "stat_id": station_id, "name": str(item.get("statNm") or "충전소명 확인 필요"),
-                "address": str(item.get("addr") or item.get("location") or "주소 확인 필요"), "lat": latitude, "lng": longitude,
+                "address": address or "주소 확인 필요", "lat": latitude, "lng": longitude,
                 "kind": facility_type(item), "use_time": str(item.get("useTime") or "") or None,
                 "parking_free": {"Y": True, "N": False}.get(str(item.get("parkingFree", "")).upper()),
                 "restriction_detail": str(item.get("limitDetail") or "") or None, "chargers": [], "distance_km": round(distance, 2),
