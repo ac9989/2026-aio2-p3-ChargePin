@@ -1,11 +1,16 @@
 name: ChargePin CD (AWS SSM)
 
 on:
+  push:
+    branches: [feature/cd-deploy]
+    paths:
+      - ".github/workflows/cd.yml"
+      - "compose.prod.yml"
+      - "ops/deploy.py"
   workflow_run:
     workflows: ["ChargePin CI"]
     types: [completed]
     branches: [main]
-  workflow_dispatch:
 
 permissions:
   contents: read
