@@ -1,4 +1,4 @@
-﻿"""Deploy pinned ChargePin images to EC2 with health-gated rollback."""
+"""Deploy pinned ChargePin images to EC2 with health-gated rollback."""
 from __future__ import annotations
 
 import argparse
@@ -44,7 +44,6 @@ def start(sha: str) -> None:
         sha,
         "up", "-d",
         "--no-build",
-        "--remove-orphans",
         "--wait",
         "--wait-timeout", "180",
     )
@@ -84,7 +83,6 @@ def deploy(sha: str) -> int:
                 sha,
                 "up", "-d",
                 "--no-build",
-                "--remove-orphans",
                 "--wait",
                 "--wait-timeout", "180",
             )
