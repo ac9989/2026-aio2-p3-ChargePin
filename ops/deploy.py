@@ -44,6 +44,8 @@ def start(sha: str) -> None:
         sha,
         "up", "-d",
         "--no-build",
+        "--no-deps",
+        "backend", "frontend",
         "--wait",
         "--wait-timeout", "180",
     )
@@ -83,6 +85,8 @@ def deploy(sha: str) -> int:
                 sha,
                 "up", "-d",
                 "--no-build",
+                "--no-deps",
+                "backend", "frontend",
                 "--wait",
                 "--wait-timeout", "180",
             )
