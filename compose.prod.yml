@@ -1,4 +1,4 @@
-﻿name: chargepin
+name: chargepin-aws
 
 services:
   backend:
