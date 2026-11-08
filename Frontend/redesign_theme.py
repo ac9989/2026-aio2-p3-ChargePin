@@ -138,7 +138,7 @@ REDESIGN_STYLES = """
 }
 .st-key-header_navigation .st-key-dashboard_navigation [data-testid="stRadioOption"] p{font-size:14px!important}
 .st-key-dashboard_management{flex:0 0 auto!important;width:auto!important}
-@media(max-width:1280px){
+@media(max-width:1440px){
  .st-key-dashboard_header .st-key-common_header{
   height:auto!important;min-height:76px!important;max-height:none!important;flex-wrap:wrap!important;row-gap:0!important;
  }
@@ -426,5 +426,209 @@ REDESIGN_STYLES = """
 }
 .cp-reference-link { display:inline-flex; align-items:center; position:relative; z-index:2; pointer-events:auto; min-height:36px; padding:0 12px; border:1px solid #d5dce3; border-radius:10px; background:#fff; color:#29343e!important; text-decoration:none!important; font-size:13px; }
 .cp-reference-link:hover { background:#f1f4f6; border-color:#aebac5; }
+.cp-quality-banner{display:flex;align-items:flex-start;gap:14px;margin:0 0 14px;padding:12px 16px;border:1px solid #f0dfa9;border-left:4px solid #f1b91b;border-radius:12px;background:#fffaf0;color:#61563c;font-size:14px;line-height:1.55}
+.cp-quality-banner strong{flex:none;color:#745710;font-size:14px}
+.cp-quality-banner ul{display:flex;flex-wrap:wrap;gap:4px 24px;margin:0;padding-left:18px}
+.cp-quality-banner li{padding-right:4px}
+@media(max-width:700px){.cp-quality-banner{display:block;padding:11px 13px;font-size:13px}.cp-quality-banner ul{display:block;margin-top:4px}}
+.st-key-quality_notice{margin:0 0 12px!important}
+.st-key-quality_notice [data-testid="stAlert"]{padding:10px 14px!important;border-radius:12px!important}
+.st-key-quality_notice [data-testid="stAlert"] p{font-size:14px!important;line-height:1.55!important;margin:0 0 4px!important}
+.st-key-quality_notice [data-testid="stAlert"] ul{margin:4px 0 0!important;padding-left:20px!important}
+.st-key-quality_notice [data-testid="stAlert"] li{font-size:14px!important;line-height:1.5!important;margin:2px 0!important}
+
+/* Request information page: consistent rhythm and readable chart details. */
+.st-key-operations_content{gap:22px!important}
+.st-key-flow_kpis{margin:18px 0 24px!important}
+.st-key-flow_charts,.st-key-flow_details{margin:0 0 24px!important}
+.st-key-flow_charts [data-testid="stHorizontalBlock"],
+.st-key-flow_details [data-testid="stHorizontalBlock"]{gap:20px!important;align-items:stretch!important}
+.st-key-flow_charts [data-testid="stVerticalBlock"][data-border="true"],
+.st-key-flow_details [data-testid="stVerticalBlock"][data-border="true"]{min-height:230px!important;padding:22px!important;gap:12px!important}
+.st-key-flow_details [data-testid="stVerticalBlock"][data-border="true"]{min-height:190px!important}
+.st-key-flow_charts .cp-section-title h3,.st-key-flow_details .cp-section-title h3{font-size:19px!important}
+.st-key-flow_charts .cp-section-note,.st-key-flow_details .cp-section-note{font-size:13px!important}
+.st-key-flow_charts .vega-embed,.st-key-flow_charts .vega-embed svg{max-width:100%!important}
+.st-key-flow_charts .vega-embed text{font-size:13px!important}
+.st-key-flow_details .cp-event-row{grid-template-columns:96px minmax(90px,1fr) auto 84px;gap:14px;padding:12px 0;font-size:14px;line-height:1.5}
+.st-key-flow_details .cp-flow-pills{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1fr);align-items:center;justify-items:stretch;gap:8px;margin:16px 0 10px;width:100%}
+.st-key-flow_details .cp-flow-pills span{display:grid;place-items:center;min-width:0;min-height:44px;padding:8px 6px;font-size:15px;font-weight:650;white-space:nowrap}
+.st-key-flow_details .cp-flow-pills i{text-align:center;font-size:16px}
+.st-key-flow_details .cp-inline-note{font-size:14px;line-height:1.6}
+@media(max-width:900px){.st-key-flow_details .cp-flow-pills{grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}.st-key-flow_details .cp-flow-pills i{display:none}.st-key-flow_details .cp-flow-pills span{white-space:normal}}
+@media(max-width:700px){.st-key-flow_charts [data-testid="stHorizontalBlock"],.st-key-flow_details [data-testid="stHorizontalBlock"]{gap:14px!important}.st-key-flow_charts [data-testid="stVerticalBlock"][data-border="true"],.st-key-flow_details [data-testid="stVerticalBlock"][data-border="true"]{padding:18px!important;min-height:0!important}.st-key-flow_details .cp-event-row{grid-template-columns:74px minmax(60px,1fr) auto;gap:8px;font-size:13px}.st-key-flow_details .cp-event-row>span:last-child{display:none}.st-key-flow_details .cp-flow-pills span{font-size:13px}}
+
+/* Make the pipeline stage labels readable at dashboard scale. */
+.st-key-pipeline_flow .cp-pipeline{gap:12px!important}
+.st-key-pipeline_flow .cp-pipeline-step{min-height:76px!important;padding:14px!important;gap:11px!important}
+.st-key-pipeline_flow .cp-pipeline-index{width:34px!important;height:34px!important;font-size:13px!important;border-radius:10px!important}
+.st-key-pipeline_flow .cp-pipeline-step b{font-size:15px!important;line-height:1.45!important}
+.st-key-pipeline_flow .cp-pipeline-step small{font-size:13px!important;line-height:1.45!important;margin-top:4px!important}
+@media(max-width:700px){.st-key-pipeline_flow .cp-pipeline{grid-template-columns:repeat(2,minmax(0,1fr))!important}.st-key-pipeline_flow .cp-pipeline-step{min-height:68px!important;padding:11px!important}.st-key-pipeline_flow .cp-pipeline-step b{font-size:14px!important}.st-key-pipeline_flow .cp-pipeline-step small{font-size:12px!important}}
+
+/* Improve spacing and readability for assistant replies with lists. */
+.st-key-chat_history [data-testid="stChatMessage"] p{font-size:16px!important;line-height:1.7!important;margin:0 0 12px!important}
+.st-key-chat_history [data-testid="stChatMessage"] p:last-child{margin-bottom:0!important}
+.st-key-chat_history [data-testid="stChatMessage"] ul,
+.st-key-chat_history [data-testid="stChatMessage"] ol{margin:8px 0 12px!important;padding-left:24px!important}
+.st-key-chat_history [data-testid="stChatMessage"] li{font-size:16px!important;line-height:1.65!important;padding-left:2px!important}
+.st-key-chat_history [data-testid="stChatMessage"] li+li{margin-top:7px!important}
+@media(max-width:700px){.st-key-chat_history [data-testid="stChatMessage"] p,.st-key-chat_history [data-testid="stChatMessage"] li{font-size:15px!important;line-height:1.65!important}.st-key-chat_history [data-testid="stChatMessage"] ul,.st-key-chat_history [data-testid="stChatMessage"] ol{padding-left:21px!important}}
+.st-key-chat_launcher{width:auto!important;min-width:0!important}
+.st-key-chat_launcher button{display:flex!important;align-items:center!important;justify-content:flex-start!important;gap:10px!important;width:auto!important;min-width:0!important;min-height:42px!important;padding:4px 10px 4px 4px!important;border:0!important;border-radius:12px!important;background:transparent!important;color:#252b32!important;box-shadow:none!important}
+.st-key-chat_launcher button p{font-size:16px!important;font-weight:750!important;white-space:nowrap!important}
+.st-key-chat_launcher button [data-testid="stIconMaterial"]{display:grid!important;place-items:center!important;width:34px!important;height:34px!important;border-radius:10px!important;background:#252b32!important;color:#f6c940!important;box-shadow:0 3px 8px #1d28321f!important}
+.st-key-chat_launcher button:hover{background:#f2f4f6!important}
+@media(max-width:700px){.st-key-chat_launcher button{min-height:38px!important;gap:8px!important}.st-key-chat_launcher button [data-testid="stIconMaterial"]{width:32px!important;height:32px!important}}
+
+/* Overview brings the three operating areas into one balanced dashboard. */
+.st-key-overview_metrics{margin:14px 0 24px!important}
+.st-key-overview_charts,.st-key-overview_details{margin:0 0 24px!important}
+.st-key-overview_pipeline{margin:0 0 20px!important;padding:22px!important}
+:is(.st-key-overview_metrics,.st-key-overview_charts,.st-key-overview_details) [data-testid="stHorizontalBlock"]{gap:20px!important;align-items:stretch!important}
+.st-key-overview_metrics .cp-metric{height:100%!important;min-height:148px!important}
+.st-key-overview_charts [data-testid="stVerticalBlock"][data-border="true"]{box-sizing:border-box!important;min-height:300px!important;padding:22px!important;gap:12px!important}
+.st-key-overview_details [data-testid="stVerticalBlock"][data-border="true"]{box-sizing:border-box!important;min-height:330px!important;padding:22px!important;gap:12px!important}
+.st-key-overview_details .cp-section-title h3,.st-key-overview_pipeline .cp-section-title h3{font-size:19px!important}
+.st-key-overview_details .cp-provider-row{font-size:13px!important;padding:10px 0!important}
+.st-key-overview_details [data-testid="stCaptionContainer"] p{font-size:12px!important;line-height:1.5!important}
+.st-key-overview_deployment [data-testid="stLinkButton"]{margin-top:8px!important}
+@media(max-width:900px){.st-key-overview_details [data-testid="stHorizontalBlock"]{flex-wrap:wrap!important}.st-key-overview_details [data-testid="stColumn"]{min-width:min(100%,320px)!important}}
+@media(max-width:700px){.st-key-overview_charts [data-testid="stVerticalBlock"][data-border="true"],.st-key-overview_details [data-testid="stVerticalBlock"][data-border="true"]{min-height:0!important;padding:18px!important}.st-key-overview_pipeline{padding:18px!important}}
+
+/* Final dashboard alignment, control sizing, and readable type scale. */
+/* Both headers use the same horizontal origin. */
+.st-key-dashboard_header .st-key-common_header{transform:none!important}
+.st-key-dashboard_header .st-key-header_navigation .st-key-dashboard_navigation [data-testid="stRadioOption"] p{font-size:17px!important}
+.st-key-dashboard_header .st-key-common_header .brand-name{font-size:27px!important}
+.st-key-dashboard_header .st-key-common_header .brand-sub{font-size:15px!important}
+.st-key-dashboard_toolbar,.st-key-dashboard_period_control{align-items:center!important}
+.st-key-dashboard_toolbar{gap:12px!important;flex-wrap:nowrap!important}
+.st-key-dashboard_period_control{height:42px!important;min-height:42px!important;gap:10px!important}
+.cp-toolbar-label{display:flex!important;align-items:center!important;height:42px!important;font-size:14px!important}
+.st-key-dashboard_period [data-testid="stRadioGroup"]{height:42px!important;min-height:42px!important;align-items:center!important;padding:4px!important}
+.st-key-dashboard_period [data-testid="stRadioOption"]{height:34px!important;min-height:34px!important;display:flex!important;align-items:center!important;padding:0 12px!important}
+.st-key-dashboard_period [data-testid="stRadioOption"] p{font-size:15px!important}
+.cp-dashboard-updated{display:flex!important;align-items:center!important;height:42px!important;font-size:14px!important}
+.st-key-dashboard_refresh button{height:42px!important;min-height:42px!important;padding:0 16px!important;font-size:15px!important}
+.st-key-dashboard_refresh button p{font-size:15px!important;font-weight:650!important}
+.st-key-dashboard_page_heading .cp-dashboard-title h2{font-size:30px!important}
+.st-key-dashboard_page_heading .cp-dashboard-subtitle{font-size:15px!important}
+.st-key-operations_content [data-testid="stMarkdownContainer"] p{font-size:15px!important;line-height:1.6!important}
+.st-key-operations_content .cp-section-title h3{font-size:21px!important}
+.st-key-operations_content .cp-section-note{font-size:14px!important}
+.st-key-operations_content .cp-metric-title{font-size:16px!important}
+.st-key-operations_content .cp-metric-value{font-size:32px!important}
+.st-key-operations_content .cp-metric-sub{font-size:14px!important}
+.st-key-operations_content .cp-provider-row{font-size:15px!important}
+.st-key-operations_content .cp-provider-status{font-size:14px!important}
+.st-key-operations_content .cp-event-row{font-size:14px!important;line-height:1.55!important}
+.st-key-operations_content .cp-event-state{font-size:14px!important}
+.st-key-operations_content .cp-inline-note{font-size:15px!important}
+.st-key-operations_content .cp-chart-empty{font-size:15px!important}
+.st-key-operations_content .cp-pipeline-step b{font-size:16px!important}
+.st-key-operations_content .cp-pipeline-step small{font-size:14px!important}
+.st-key-operations_content .cp-pipeline-index{font-size:14px!important}
+.st-key-operations_content .vega-embed text{font-size:14px!important}
+.st-key-operations_content [data-testid="stDataFrame"]{font-size:14px!important}
+@media(max-width:900px){.st-key-dashboard_toolbar{flex-wrap:wrap!important}.st-key-dashboard_header .st-key-common_header .brand-name{font-size:23px!important}}
+@media(max-width:700px){.st-key-dashboard_period_control{height:auto!important;min-height:40px!important}.st-key-dashboard_period [data-testid="stRadioGroup"]{height:40px!important;min-height:40px!important}.st-key-dashboard_page_heading .cp-dashboard-title h2{font-size:26px!important}.st-key-operations_content .cp-metric-value{font-size:27px!important}.st-key-operations_content .cp-section-title h3{font-size:19px!important}}
+
+/* Charging information notice */
+.st-key-quality_notice [data-testid="stAlert"] {
+  border:1px solid #e4c777!important;
+  border-radius:14px!important;
+  padding:16px 22px!important;
+  align-items:center!important;
+}
+.st-key-quality_notice [data-testid="stAlert"] [data-testid="stMarkdownContainer"] {
+  text-align:center!important;
+}
+.st-key-quality_notice [data-testid="stAlert"] [data-testid="stMarkdownContainer"] p {
+  text-align:center!important;
+}
+.st-key-quality_notice [data-testid="stAlert"] [data-testid="stMarkdownContainer"] ul {
+  padding:0!important;
+  margin:6px 0 0!important;
+  list-style-position:inside!important;
+  text-align:center!important;
+}
+
+/* Keep all four build and deployment summary cards the same size. */
+.st-key-pipeline_kpis [data-testid="stHorizontalBlock"]{align-items:stretch!important}
+.st-key-pipeline_kpis [data-testid="stColumn"]{display:flex!important;align-self:stretch!important;min-width:0!important}
+.st-key-pipeline_kpis [data-testid="stColumn"] [data-testid="stVerticalBlock"],
+.st-key-pipeline_kpis [data-testid="stMarkdownContainer"]{width:100%!important;height:100%!important}
+.st-key-pipeline_kpis .cp-metric{box-sizing:border-box!important;width:100%!important;height:232px!important;min-height:232px!important;overflow:visible!important}
+.st-key-pipeline_kpis .cp-metric-content{display:flex!important;flex-direction:column!important;align-items:flex-start!important;height:100%!important}
+.st-key-pipeline_kpis .cp-metric-sub{display:block!important;min-height:44px!important;line-height:1.55!important}
+.st-key-pipeline_kpis .cp-metric-content>div:has(.cp-reference-link){margin-top:auto!important;padding-top:8px!important}
+@media(max-width:700px){.st-key-pipeline_kpis .cp-metric{height:210px!important;min-height:210px!important;padding:18px!important}.st-key-pipeline_kpis .cp-metric-sub{min-height:40px!important}}
+
+/* Shared header geometry across user and dashboard views. */
+.st-key-common_header{box-sizing:border-box!important;margin:0!important;padding:0!important;align-items:center!important}
+.st-key-dashboard_header{padding:0!important}
+.st-key-dashboard_header .st-key-common_header{transform:none!important;margin:0!important;padding:0!important}
+.st-key-common_header .st-key-header_actions{flex:0 0 116px!important;width:116px!important;min-width:116px!important;max-width:116px!important;align-items:center!important}
+.st-key-common_header :is(.st-key-header_settings,.st-key-header_power) button{width:52px!important;height:52px!important;min-width:52px!important;min-height:52px!important;aspect-ratio:1!important}
+
+/* Keep the deployment reference next to its card title. */
+.st-key-pipeline_kpis .cp-metric{height:100%!important;min-height:170px!important}
+.st-key-pipeline_kpis .cp-metric-content{width:100%!important;align-items:stretch!important}
+.st-key-pipeline_kpis .cp-metric-title-row{display:flex!important;align-items:center!important;justify-content:space-between!important;gap:8px!important;flex-wrap:wrap!important;margin:0!important;padding:0!important}
+.st-key-pipeline_kpis .cp-metric-sub{min-height:0!important}
+.st-key-pipeline_kpis .cp-reference-link{min-height:32px!important;padding:0 9px!important;font-size:12px!important;white-space:nowrap!important}
+@media(max-width:700px){.st-key-pipeline_kpis .cp-metric{min-height:150px!important;height:100%!important}}
+
+/* ChargePin dashboard metric icons */
+.st-key-operations_content .cp-metric-icon{background:#252b32!important;border:1px solid #252b32!important;color:#ffb544!important;display:grid!important;place-items:center!important;box-shadow:0 3px 8px #1925301a!important}
+.st-key-operations_content .cp-metric-icon svg{display:block!important;width:21px!important;height:21px!important;margin:0!important}
+
+/* Guardrail · compliance components (2026-11-08). Yellow stays an accent; states use one tone set. */
+.cp-status{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;font-size:12px;font-weight:650;white-space:nowrap;background:#f1f3f5;color:#5d6a76}
+.cp-status::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.75}
+.cp-status.good{background:#eaf5ef;color:#2c805e}.cp-status.warn{background:#fdf4dc;color:#94690c}
+.cp-status.bad{background:#fbecea;color:#b34a43}.cp-status.muted{background:#f3f4f6;color:#8a949d}
+.cp-action-list{display:flex;flex-direction:column}
+.cp-action-row{display:grid;grid-template-columns:10px 1fr auto;gap:12px;align-items:start;padding:11px 0;border-bottom:1px solid #eff2f4}
+.cp-action-row:last-child{border-bottom:0}
+.cp-action-row>i{width:8px;height:8px;margin-top:6px;border-radius:50%;background:#b8c1c8}
+.cp-action-row>i.bad{background:#c4544c}.cp-action-row>i.warn{background:#e2ad1f}
+.cp-action-row b{display:block;font-size:14px;color:#25303a;font-weight:700}
+.cp-action-row small{display:block;margin-top:2px;font-size:12px;line-height:1.5;color:#7d8a95}
+.cp-action-ref{font-size:11px;font-weight:700;color:#8b6a12;background:#fff6d8;border-radius:6px;padding:3px 7px}
+.cp-stage-flow{display:grid;grid-template-columns:repeat(var(--stages,5),minmax(0,1fr));gap:0;margin:10px 0 4px;border:1px solid #e5e9ec;border-radius:11px;overflow:hidden}
+.cp-stage{position:relative;min-width:0;padding:14px 14px 13px;background:#fafbfb;border-right:1px solid #e5e9ec}
+.cp-stage:last-child{border-right:0}
+.cp-stage:not(:last-child)::after{content:"";position:absolute;right:-6px;top:50%;width:10px;height:10px;transform:translateY(-50%) rotate(45deg);background:#fafbfb;border-top:1px solid #e5e9ec;border-right:1px solid #e5e9ec;z-index:1}
+.cp-stage-index{font-size:11px;font-weight:750;color:#a07a12}
+.cp-stage b{display:block;margin-top:6px;font-size:13px;color:#313a42;overflow-wrap:anywhere}
+.cp-stage strong{display:block;margin-top:4px;font-size:17px;font-weight:750;color:#20252b;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.cp-stage small{display:block;margin-top:4px;font-size:11px;line-height:1.45;color:#8a959f;overflow-wrap:anywhere}
+.cp-table-wrap{overflow:auto;border:1px solid #e8ecef;border-radius:10px}
+.cp-table{width:100%;border-collapse:collapse;font-size:13px;color:#36434f}
+.cp-table th{position:sticky;top:0;background:#f6f8f9;color:#687784;font-weight:650;font-size:12px;text-align:left;padding:10px 12px;border-bottom:1px solid #e8ecef;white-space:nowrap}
+.cp-table td{padding:10px 12px;border-bottom:1px solid #f0f2f4;vertical-align:top;line-height:1.5}
+.cp-table tr:last-child td{border-bottom:0}
+.cp-table td:first-child{font-weight:650;color:#25303a;white-space:nowrap}
+.cp-table td{word-break:keep-all}.cp-table td.nowrap{white-space:nowrap}
+.st-key-compliance_area [data-testid="stRadioGroup"]{gap:8px!important;flex-wrap:wrap!important}
+.st-key-compliance_area [data-testid="stRadioOption"]{padding:6px 12px!important;border:1px solid #e3e8ec!important;border-radius:999px!important}
+.st-key-compliance_area [data-testid="stRadioOption"]:has(input:checked){background:#20252b!important;border-color:#20252b!important}
+.st-key-compliance_area [data-testid="stRadioOption"]:has(input:checked) p{color:#fff!important}
+.st-key-compliance_area [data-testid="stRadioOption"] [data-baseweb="radio"]>div:first-child{display:none!important}
+@media(max-width:1000px){.cp-stage-flow{grid-template-columns:repeat(2,minmax(0,1fr))}.cp-stage{border-bottom:1px solid #e5e9ec}.cp-stage::after{display:none}}
+
+/* Six dashboard menus: let the brand size to its text, drop the subtitle before the menu collides. */
+.st-key-dashboard_header .st-key-user_brand{flex:0 0 auto!important;width:auto!important;min-width:0!important;max-width:none!important}
+@media(max-width:1600px){[data-testid="stMain"]:has(.dashboard-marker) .brand-sub{display:none!important}}
+.st-key-dashboard_header .st-key-common_header>div:has(>.st-key-user_brand){flex:0 0 auto!important;width:auto!important}
+.st-key-dashboard_header .st-key-common_header>div:has(>.st-key-header_navigation){flex:1 1 0%!important;min-width:0!important}
+@media(max-width:1440px){
+ .st-key-dashboard_header .st-key-common_header{flex-wrap:wrap!important;height:auto!important;max-height:none!important}
+ .st-key-dashboard_header .st-key-common_header>div:has(>.st-key-user_brand){flex:1 1 0%!important;order:0}
+ .st-key-dashboard_header .st-key-common_header>div:has(>.st-key-header_actions){order:1}
+ .st-key-dashboard_header .st-key-common_header>div:has(>.st-key-header_navigation){flex:0 0 100%!important;width:100%!important;max-width:100%!important;order:2}
+}
 </style>
 """

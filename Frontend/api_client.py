@@ -45,10 +45,25 @@ class ChargePinApi:
         elif path == "/chat/plan" and isinstance(payload, dict):
             if payload.get("candidates") or payload.get("search_request"):
                 event["place_lookup"] = "success"
-            event["plan_status"] = payload.get("status")
+            if payload.get("status") in ("AWAITING_CONFIRMATION", "AWAITING_LOCATION_CONFIRMATION",
+                                         "NEEDS_INPUT", "BLOCKED"):
+                event["plan_status"] = payload["status"]
         if isinstance(payload, dict) and "results" in payload and "applied_request" in payload:
             event["search_status"] = payload.get("status")
-            event["result_count"] = len(payload.get("results", []))
+            results = payload.get("results") if isinstance(payload.get("results"), list) else []
+            event["result_count"] = len(results)
+            # Agent verdicts and availability states are counted, never copied as text.
+            if payload.get("critic_decision") in ("PASS", "SAFE_UNAVAILABLE"):
+                event["critic_decision"] = payload["critic_decision"]
+            findings = payload.get("critic_findings")
+            if isinstance(findings, list):
+                event["critic_finding_count"] = len(findings)
+            states: dict[str, int] = {}
+            for item in results:
+                state = (item.get("availability") or {}).get("state") if isinstance(item, dict) else None
+                if state in ("AVAILABLE", "DELAYED", "UNAVAILABLE", "CANDIDATE_ONLY"):
+                    states[state] = states.get(state, 0) + 1
+            event["availability_counts"] = states
         self._observe(event, started)
         return payload
 
@@ -106,15 +121,16 @@ class ChargePinApi:
     def confirm(self, request_id: str, access_token: str, candidate_id: str | None = None) -> dict[str, Any]:
         return self._request("POST", f"/search/{request_id}/confirm", json={"confirmed": True, "candidate_id": candidate_id}, access_token=access_token)
 
-    def operations_summary(self, access_token: str) -> dict[str, Any]:
-        payload = self._request("GET", "/ops/summary", access_token=access_token)
-        return payload if isinstance(payload, dict) else {}
-
-    def retry_search(self, request_id: str, access_token: str) -> dict[str, Any]:
-        return self._request("POST", f"/ops/requests/{request_id}/retry", access_token=access_token)
-
-    def refresh_cache(self, access_token: str) -> dict[str, Any]:
-        return self._request("POST", "/ops/cache/refresh", access_token=access_token)
-
     def boom(self, scenario: int, access_token: str) -> dict[str, Any]:
         return self._request("GET", f"/boom/{scenario}", access_token=access_token, root_url=True)
+
+    # Operator-only server views for the dashboard. app.py calls them only when
+    # CHARGEPIN_DASHBOARD_SERVER_OPS=true, after the backend serves these endpoints.
+    def ops_summary(self, access_token: str) -> dict[str, Any]:
+        return self._request("GET", "/ops/summary", access_token=access_token, timeout=5)
+
+    def ops_platform(self, access_token: str) -> dict[str, Any]:
+        return self._request("GET", "/ops/platform", access_token=access_token, timeout=5)
+
+    def ops_healing(self, access_token: str) -> dict[str, Any]:
+        return self._request("GET", "/ops/healing", access_token=access_token, timeout=5)

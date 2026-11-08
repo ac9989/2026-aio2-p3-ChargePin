@@ -1,0 +1,201 @@
+{
+ "title": "ChargePin 에이전트 운영 컴플라이언스 자가 점검",
+ "source_date": "2026-11-08",
+ "basis": "저장소 코드 · 배포·운영 관리표 · 현재 세션 관측. 평가 결과가 아닌 팀 자가 점검입니다.",
+ "status_legend": {
+  "충족": "구현과 실행 증빙이 모두 있음",
+  "구현": "코드·문서로 구현, 실행 증빙은 아직 없음",
+  "부분": "일부만 구현되었거나 증빙이 일부만 있음",
+  "미착수": "구현 또는 증빙이 없음"
+ },
+ "areas": [
+  {
+   "key": "P3-1",
+   "label": "에이전트 협업"
+  },
+  {
+   "key": "GR",
+   "label": "에이전트 가드레일"
+  },
+  {
+   "key": "P3-2",
+   "label": "운영 안정성·복구"
+  },
+  {
+   "key": "P3-3",
+   "label": "CI/CD"
+  }
+ ],
+ "items": [
+  {
+   "id": "A-1",
+   "area": "P3-1",
+   "control_title": "역할 분리",
+   "control": "Planner · Executor · Critic · Memory Keeper 역할 분리, Orchestrator는 코드로 순서 제어",
+   "status": "구현",
+   "evidence": "Backend/app/agents.py · 아키텍처 설계서",
+   "source": "코드·문서"
+  },
+  {
+   "id": "A-2",
+   "area": "P3-1",
+   "control_title": "도구 권한 경계",
+   "control": "Planner는 외부 API 어댑터를 받지 않고, 카카오·환경공단 호출은 Executor만 수행",
+   "status": "구현",
+   "evidence": "agents.py Planner · Executor 구성",
+   "source": "코드"
+  },
+  {
+   "id": "A-3",
+   "area": "P3-1",
+   "control_title": "Handoff 문맥 보존",
+   "control": "request_id 하나로 Planner → Executor → Critic 기록을 연결",
+   "status": "구현",
+   "evidence": "Memory Keeper handoff 기록 · 화면 단계별 이력은 서버 연결 대기",
+   "source": "코드",
+   "live": "trace_session"
+  },
+  {
+   "id": "G-1",
+   "area": "GR",
+   "control_title": "입력 가드레일",
+   "control": "시스템 지침 무시 · 비밀 정보 요청 · 타인 데이터 · 권한 변경 4개 범주를 Planner 이전에 차단",
+   "status": "구현",
+   "evidence": "agents.py InputGuardrail · 차단 원문 미보존",
+   "source": "코드",
+   "live": "guardrail_session"
+  },
+  {
+   "id": "G-2",
+   "area": "GR",
+   "control_title": "출력 검증",
+   "control": "Critic이 PASS 또는 SAFE_UNAVAILABLE로 판정, 확인되지 않은 충전 상태는 단정하지 않음",
+   "status": "구현",
+   "evidence": "SearchResponse.critic_decision · critic_findings",
+   "source": "코드",
+   "live": "critic_session"
+  },
+  {
+   "id": "G-3",
+   "area": "GR",
+   "control_title": "접근 통제",
+   "control": "운영 API는 관리자만 허용(403), 대시보드는 관리자 역할만 진입",
+   "status": "구현",
+   "evidence": "main.py require_operator · dashboard_data.can_view_dashboard",
+   "source": "코드"
+  },
+  {
+   "id": "G-4",
+   "area": "GR",
+   "control_title": "관측 데이터 최소 수집",
+   "control": "프론트 이벤트에 키·토큰·질의 원문·응답 본문을 기록하지 않음",
+   "status": "충족",
+   "evidence": "프론트 단위 테스트 test_search_request_id_is_recorded_without_credentials_or_input (로컬 실행)",
+   "source": "테스트"
+  },
+  {
+   "id": "R-1",
+   "area": "P3-2",
+   "control_title": "컨테이너 구성",
+   "control": "백엔드 · 프론트 컨테이너 분리, Compose 헬스체크 정의",
+   "status": "구현",
+   "evidence": "docker-compose.yml",
+   "source": "코드"
+  },
+  {
+   "id": "R-2",
+   "area": "P3-2",
+   "control_title": "오케스트레이션 매니페스트",
+   "control": "Pod · Service · Secret 매니페스트와 서비스 디스커버리",
+   "status": "미착수",
+   "evidence": "저장소에 매니페스트 없음 · 대시보드 표시 준비 완료(GET /api/v1/ops/platform)",
+   "source": "저장소",
+   "live": "k8s_ready"
+  },
+  {
+   "id": "R-3",
+   "area": "P3-2",
+   "control_title": "헬스 체크",
+   "control": "프로세스 생존(/healthz)과 의존성별 상태(ok · degraded · down) 구분",
+   "status": "부분",
+   "evidence": "/healthz는 생존 확인만 응답 · 의존성별 심층 헬스 미구현",
+   "source": "코드",
+   "live": "health"
+  },
+  {
+   "id": "R-4",
+   "area": "P3-2",
+   "control_title": "장애 감지 지표",
+   "control": "요청 측 4xx · 서버 측 5xx · 연결 실패 분리, 응답 지연, 외부 API 상태",
+   "status": "부분",
+   "evidence": "현재 세션 집계는 화면 반영 · 서버 범위 집계(/ops/summary) 미연결",
+   "source": "세션·코드"
+  },
+  {
+   "id": "R-5",
+   "area": "P3-2",
+   "control_title": "Auto Healing",
+   "control": "헬스 체크 2회 연속 실패 시 재시작, 120초 쿨다운, 10분당 3회 상한, 멈춘 컨테이너는 재시작하지 않음",
+   "status": "부분",
+   "evidence": "ops/autoheal.py · 정책 테스트 9개 · 시험 1회 8.48초 · 로컬 실행 전용",
+   "source": "코드·관리표",
+   "live": "healing"
+  },
+  {
+   "id": "R-6",
+   "area": "P3-2",
+   "control_title": "필수 장애시험",
+   "control": "외부 API · Executor · DB · LLM 오류 각 3회 주입과 복구 확인",
+   "status": "미착수",
+   "evidence": "0 / 12회",
+   "source": "관리표"
+  },
+  {
+   "id": "C-1",
+   "area": "P3-3",
+   "control_title": "파이프라인 단계",
+   "control": "테스트 → 이미지 빌드 → GHCR 게시(main) 순차 실행, 선행 단계 실패 시 후속 단계 생략",
+   "status": "구현",
+   "evidence": ".github/workflows/ci.yml needs 연결",
+   "source": "코드",
+   "live": "ci_tests"
+  },
+  {
+   "id": "C-2",
+   "area": "P3-3",
+   "control_title": "실패 차단 실증",
+   "control": "고의 실패 실행에서 build · publish 생략 확인",
+   "status": "미착수",
+   "evidence": "고의 실패 실행 기록 없음",
+   "source": "관리표"
+  },
+  {
+   "id": "C-3",
+   "area": "P3-3",
+   "control_title": "테스트 범위",
+   "control": "백엔드 단위 · 프론트 문법 · Auto Healing 정책 테스트, 커버리지 측정",
+   "status": "부분",
+   "evidence": "CI 테스트 작업 3종 · 커버리지 측정 미설정",
+   "source": "코드"
+  },
+  {
+   "id": "C-4",
+   "area": "P3-3",
+   "control_title": "실패 알림 · 에스컬레이션",
+   "control": "파이프라인 실패 시 담당자 알림과 단계별 에스컬레이션",
+   "status": "미착수",
+   "evidence": "수신 채널 미확정 · 알림 증빙 없음",
+   "source": "관리표"
+  },
+  {
+   "id": "C-5",
+   "area": "P3-3",
+   "control_title": "배포 · 롤백",
+   "control": "EC2 배포 자동화와 이전 이미지로 롤백",
+   "status": "부분",
+   "evidence": "EC2 시험 배포 수동 · 자동 CD · 롤백 보류",
+   "source": "관리표"
+  }
+ ],
+ "status_legend_note": "실시간 신호는 '구현' 항목만 '충족'으로 올립니다. 매니페스트·힐링을 배포 환경에 적용하면 해당 항목을 '구현'으로 바꿔 주세요."
+}

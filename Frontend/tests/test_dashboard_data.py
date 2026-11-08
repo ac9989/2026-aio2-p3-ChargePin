@@ -5,7 +5,9 @@ import unittest
 from unittest.mock import patch
 from api_client import ChargePinApi
 
-from dashboard_data import allowed_demo_role_transitions, can_manage_roles, can_view_dashboard, event_kind, summarize_events
+from dashboard_data import (action_items, allowed_demo_role_transitions, can_export_report, can_manage_roles,
+                            can_view_dashboard, compliance_score, error_class, evaluate_compliance, event_kind,
+                            guardrail_summary, health_label, load_compliance_reference, summarize_events)
 from map_view import build_map_html
 
 
@@ -102,6 +104,80 @@ class MapViewTests(unittest.TestCase):
         self.assertIn("&lt;b&gt;address&lt;/b&gt;", html)
         self.assertIn("반경 0.5 km", html)
         self.assertIn('"selected": true', html)
+
+
+class GuardrailComplianceTests(unittest.TestCase):
+    def test_errors_are_split_into_request_server_and_transport(self):
+        self.assertEqual(error_class({"outcome": "error", "status_code": 403}), "요청 측 4xx")
+        self.assertEqual(error_class({"outcome": "error", "status_code": 503}), "서버 측 5xx")
+        self.assertEqual(error_class({"outcome": "error", "status_code": None}), "연결 실패")
+        self.assertIsNone(error_class({"outcome": "success", "status_code": 500}))
+
+    def test_guardrail_counts_passes_as_well_as_blocks(self):
+        events = [
+            {"path": "/chat/plan", "outcome": "success", "plan_status": "BLOCKED", "observed_at": "2026-11-08T00:00:00Z"},
+            {"path": "/chat/plan", "outcome": "success", "plan_status": "AWAITING_CONFIRMATION", "observed_at": "2026-11-08T00:00:01Z"},
+            {"path": "/search/a/confirm", "outcome": "success", "search_status": "degraded",
+             "critic_decision": "SAFE_UNAVAILABLE", "critic_finding_count": 2,
+             "availability_counts": {"DELAYED": 2, "AVAILABLE": 1, "FAKE": 9}, "observed_at": "2026-11-08T00:00:02Z"},
+            {"path": "/search", "outcome": "error", "status_code": 403, "observed_at": "2026-11-08T00:00:03Z"},
+        ]
+        data = summarize_events(events)
+        guard = guardrail_summary(data)
+        self.assertEqual((guard["input_checked"], guard["input_blocked"], guard["input_passed"]), (2, 1, 1))
+        self.assertEqual((guard["output_checked"], guard["output_safe"], guard["output_pass"]), (1, 1, 0))
+        self.assertEqual(guard["access_denied"], 1)
+        self.assertEqual(guard["finding_count"], 2)
+        self.assertEqual({row["kind"]: row["count"] for row in data["availability_counts"]},
+                         {"충전 가능": 1, "정보 지연": 2})
+        self.assertEqual(data["server_error_count"], 0)
+        self.assertEqual(data["observed"][0]["state"], "차단")
+
+    def test_health_mapping_never_upgrades_unknown_replies(self):
+        self.assertEqual(health_label({"status": "ok"}, True), "정상")
+        self.assertEqual(health_label({"status": "degraded"}, True), "저하")
+        self.assertEqual(health_label({"status": "maybe"}, True), "확인 필요")
+        self.assertEqual(health_label(None, False), "중단")
+
+    def test_live_signals_only_promote_implemented_controls(self):
+        reference = {"items": [
+            {"id": "X-1", "status": "구현", "live": "health"},
+            {"id": "X-2", "status": "부분", "live": "health"},
+            {"id": "X-3", "status": "미착수", "live": "ci_tests"},
+            {"id": "X-4", "status": "구현", "live": "guardrail_session"},
+        ]}
+        items = {item["id"]: item for item in evaluate_compliance(reference, {"health": "정상", "ci_tests": "성공"})}
+        self.assertEqual(items["X-1"]["status"], "충족")
+        self.assertEqual(items["X-2"]["status"], "부분")
+        self.assertTrue(items["X-2"]["live_note"])
+        self.assertEqual(items["X-3"]["status"], "미착수")
+        self.assertEqual(items["X-4"]["status"], "구현")
+
+    def test_bundled_report_is_valid_and_actions_put_live_failures_first(self):
+        reference = load_compliance_reference()
+        ids = [item["id"] for item in reference["items"]]
+        self.assertEqual(len(ids), len(set(ids)))
+        items = evaluate_compliance(reference, {})
+        self.assertEqual(compliance_score(items)["total"], len(ids))
+        data = summarize_events([{"path": "/search", "outcome": "error", "status_code": 502,
+                                  "observed_at": "2026-11-08T00:00:00Z"}])
+        actions = action_items(items, data, "중단")
+        self.assertEqual([item["ref"] for item in actions[:2]], ["R-3", "R-4"])
+        self.assertTrue(can_export_report("상급 관리자"))
+        self.assertFalse(can_export_report("하급 관리자"))
+
+    def test_search_verdicts_are_counted_without_copying_text(self):
+        events = []
+        api = ChargePinApi(observer=events.append)
+        response = {"request_id": "req-9", "status": "degraded", "applied_request": {},
+                    "critic_decision": "SAFE_UNAVAILABLE", "critic_findings": ["private finding text"],
+                    "results": [{"availability": {"state": "DELAYED"}}, {"availability": {"state": "AVAILABLE"}}]}
+        with patch.object(api, "_perform_request", return_value=response):
+            api._request("POST", "/search", access_token="token")
+        self.assertEqual(events[0]["critic_decision"], "SAFE_UNAVAILABLE")
+        self.assertEqual(events[0]["critic_finding_count"], 1)
+        self.assertEqual(events[0]["availability_counts"], {"DELAYED": 1, "AVAILABLE": 1})
+        self.assertNotIn("private finding text", str(events))
 
 
 if __name__ == "__main__":
