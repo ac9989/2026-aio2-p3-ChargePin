@@ -876,7 +876,12 @@ class SearchOrchestrator:
             return ChatPlanResponse(request_id=request_id, status="NEEDS_INPUT", message="검색을 취소했습니다. 다른 장소를 입력해 주세요.")
         if "candidates" in handoff:
             candidates = [PlaceCandidate.model_validate(item) for item in handoff["candidates"]]
-            selected = next((candidate for candidate in candidates if candidate.candidate_id == confirmation.candidate_id), candidates[0])
+            selected = next((candidate for candidate in candidates
+                             if candidate.candidate_id == confirmation.candidate_id), None)
+            if confirmation.candidate_id and selected is None:
+                raise ValueError("확인할 장소 후보를 찾지 못했습니다.")
+            # Preserve existing legacy client behavior when no candidate id is supplied.
+            selected = selected or candidates[0]
             selected_location_name = selected.name
             region_filters = [f"zscode:{selected.district_code}"] if selected.district_code else []
             conditions = handoff.get("planner_conditions", {})
