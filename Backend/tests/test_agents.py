@@ -184,7 +184,9 @@ class SearchOrchestratorTests(unittest.TestCase):
         self.assertEqual(follow_up.search_request.radius_km, 1.0)
         self.assertEqual(follow_up.search_request.connector_types, [ConnectorType.FAST])
         self.assertEqual(self.place_queries, ["사당역", "서울특별시청"])
-        self.assertEqual(seen_contexts[1]["search_diameter_km"], 1.0)
+        # The initial explicit-place search takes the rule fast path; only the
+        # context-only condition change needs the LLM and receives the summary.
+        self.assertEqual(seen_contexts[0]["search_diameter_km"], 1.0)
 
     def test_out_of_range_chat_value_is_rejected_before_place_lookup(self) -> None:
         self.service.planner._api_key = "test-key"
@@ -246,7 +248,9 @@ class SearchOrchestratorTests(unittest.TestCase):
             raise RuntimeError("simulated model outage")
 
         self.service.planner._llm_extract = unavailable
-        plan = self.service.plan_chat("사당역 급속 충전소 찾아 줘", "GUEST")
+        # Korean-number wording needs structured LLM extraction. If it fails,
+        # no Kakao or KECO lookup may start.
+        plan = self.service.plan_chat("사당역 근처 두 키로 급속 충전소 찾아 줘", "GUEST")
 
         self.assertEqual(plan.status, "NEEDS_INPUT")
         self.assertIn("AI 자연어 해석", plan.message)

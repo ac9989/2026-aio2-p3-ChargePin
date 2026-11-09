@@ -146,7 +146,12 @@ Rules:
         name exists is the Executor's Kakao-place responsibility, not Planner's.
         """
         value = message.strip()
-        value = re.sub(r"[123]\s*(?:km|킬로미터|킬로|키로)", " ", value, flags=re.IGNORECASE)
+        value = re.sub(
+            r"(?:[123]|한|두|세|하나|둘|셋)\s*(?:km|킬로미터|킬로|키로)",
+            " ",
+            value,
+            flags=re.IGNORECASE,
+        )
         value = re.sub(
             r"(?:급속|완속|전기차|충전소|충전기|주변|근처|주위|반경|이내|"
             r"찾아주세요|찾아줘|찾아|알려주세요|알려줘|알려|보여주세요|보여줘|보여|"

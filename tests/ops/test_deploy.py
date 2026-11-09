@@ -4,7 +4,9 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
+import types
 import unittest
 from unittest.mock import patch
 
@@ -28,6 +30,18 @@ class DeploymentRollbackTests(unittest.TestCase):
         self.sha_patch.start()
         self.addCleanup(self.state_patch.stop)
         self.addCleanup(self.sha_patch.stop)
+        # deploy() intentionally blocks actual Windows deployment. These are
+        # offline unit tests, so emulate only the Linux lock dependency and
+        # keep Docker fully mocked below.
+        self.platform_patch = patch.object(deploy_mod.os, "name", "posix")
+        self.fcntl_patch = patch.dict(
+            sys.modules,
+            {"fcntl": types.SimpleNamespace(LOCK_EX=1, flock=lambda *_args: None)},
+        )
+        self.platform_patch.start()
+        self.fcntl_patch.start()
+        self.addCleanup(self.platform_patch.stop)
+        self.addCleanup(self.fcntl_patch.stop)
         deploy_mod.STABLE_SHA.write_text(OLD + "\n", encoding="utf-8")
         self.calls = []
 
