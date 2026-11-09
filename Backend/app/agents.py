@@ -850,6 +850,7 @@ class SearchOrchestrator:
             request_id,
             search_request=request.model_dump(mode="json"),
             selected_candidate=selected.model_dump(mode="json"),
+            candidate_options=[candidate.model_dump(mode="json") for candidate in candidates],
         )
         types = "·".join("급속" if item == ConnectorType.FAST else "완속" for item in draft.connector_types)
         return ChatPlanResponse(
@@ -896,6 +897,20 @@ class SearchOrchestrator:
             request = SearchRequest.model_validate(handoff["search_request"])
             request.user_confirmed = True
             selected_data = handoff.get("selected_candidate", {})
+            # Named-place plans carry a default suggestion, but the frontend can
+            # explicitly select any Kakao candidate. Never ignore that choice.
+            if confirmation.candidate_id:
+                options = [PlaceCandidate.model_validate(item)
+                           for item in handoff.get("candidate_options", [])]
+                chosen = next((item for item in options
+                               if item.candidate_id == confirmation.candidate_id), None)
+                if chosen is None:
+                    raise ValueError("확인할 장소 후보를 찾지 못했습니다.")
+                request.center = chosen.location
+                request.region_filters = (
+                    [f"zscode:{chosen.district_code}"] if chosen.district_code else []
+                )
+                selected_data = chosen.model_dump(mode="json")
             selected_location_name = selected_data.get("name") if isinstance(selected_data, dict) else None
             if not isinstance(selected_location_name, str) or not selected_location_name.strip():
                 selected_location_name = ""
