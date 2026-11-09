@@ -28,6 +28,7 @@ services:
     image: ghcr.io/ac9989/chargepin-frontend:sha-${CHARGEPIN_DEPLOY_SHA:?Deploy SHA is required}
     environment:
       CHARGEPIN_API_BASE_URL: http://backend:8000/api/v1
+      CHARGEPIN_DASHBOARD_SERVER_OPS: "true"
       KAKAO_JAVASCRIPT_KEY: ${KAKAO_JAVASCRIPT_KEY:-}
     ports:
       - "127.0.0.1:8501:8501"

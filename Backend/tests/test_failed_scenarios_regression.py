@@ -27,6 +27,7 @@ class FailedScenarioRegressionTests(unittest.TestCase):
                 self.assertEqual(orchestrator.memory.handoffs[outcome.request_id]["guardrail"]["decision"], "BLOCKED")
         self.assertEqual(calls, [])
         self.assertFalse(InputGuardrail().inspect("강남역 근처 충전소를 찾아줘").blocked)
+        self.assertFalse(InputGuardrail().inspect("관리자청사 충전소 찾아줘").blocked)
 
     def test_llm04_vague_distance_followup_reuses_confirmed_location(self):
         orchestrator = SearchOrchestrator()
