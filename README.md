@@ -88,7 +88,7 @@ Streamlit 사용자 화면과 운영 대시보드가 FastAPI 백엔드에 연결
 | 출처별 의미의 분리 | 카카오는 장소·좌표, 환경공단은 충전기 상태·갱신 시각의 근거로 사용해 장소 후보와 실제 상태를 혼동하지 않습니다. |
 | 조회 성공과 품질 검증의 분리 | API 응답이 성공해도 Critic이 수량·시각을 따로 검사합니다. 검증하지 못한 값은 추정하지 않고 표시를 제한합니다. |
 
-시스템 구성·API·Handoff·정책의 상세 배경은 [아키텍처 설계서](docs/Architecture_Design_1.0.md)에, 기능 범위는 [PRD](docs/PRD.md)에 정리되어 있습니다. 설계서는 목표 구조도 포함하며, 아래 현재 구현 범위와 구분합니다.
+시스템 구성·API·Handoff·정책의 상세 배경은 [아키텍처 설계서 1.2](docs/P3-1_Architecture_Design_1.2.md)에, 기능 범위는 [PRD 1.2](docs/PRD_1.2.md)에 정리되어 있습니다. 두 문서는 구조화 운영 로그와 Discord 실패 알림까지 포함한 현재 구현 기준입니다.
 
 <details>
 <summary><b>현재 구현의 역할·검색 경로·제약</b></summary>
@@ -328,9 +328,10 @@ Pop-Location
 │   ├── compliance_reference.json
 │   └── design/           # 화면·대시보드 설계
 ├── docs/
-│   ├── PRD.md
-│   ├── Architecture_Design_1.0.md
+│   ├── PRD_1.2.md
+│   ├── P3-1_Architecture_Design_1.2.md
 │   └── Fault_Test_Guide.md
+├── logs/                 # 구조화 운영 로그 (Git 미추적)
 ├── ops/                  # 배포·롤백 · 로컬 Watchdog
 ├── tests/ops/            # Watchdog·배포 정책 테스트
 ├── .github/workflows/    # CI · AWS SSM CD
