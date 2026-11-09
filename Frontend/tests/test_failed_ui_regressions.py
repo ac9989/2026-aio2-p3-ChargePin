@@ -54,6 +54,12 @@ class FailedUiRegressionTests(unittest.TestCase):
         self.assertIn('st.session_state.get("auth_token")', text)
         self.assertNotIn('st.session_state.get("access_token")', text)
 
+    def test_op02_production_compose_enables_backend_operations_panel(self):
+        compose = (ROOT.parent / "compose.prod.yml").read_text(encoding="utf-8")
+        frontend = compose.split("\\n  frontend:\\n", 1)
+        self.assertEqual(len(frontend), 2, "production frontend service missing")
+        self.assertIn('CHARGEPIN_DASHBOARD_SERVER_OPS: "true"', frontend[1])
+
 
 if __name__ == "__main__":
     unittest.main()
