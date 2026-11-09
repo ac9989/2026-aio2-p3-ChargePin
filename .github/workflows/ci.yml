@@ -112,3 +112,21 @@ jobs:
           tags: |
             ghcr.io/ac9989/chargepin-frontend:latest
             ghcr.io/ac9989/chargepin-frontend:sha-${{ github.sha }}
+
+  notify-failure:
+    name: Notify CI failure to Discord
+    runs-on: ubuntu-latest
+    needs: [backend-tests, frontend-syntax, autohealing-tests, docker-build, publish-images]
+    if: ${{ failure() }}
+    steps:
+      - name: Send failure alert to team channel
+        env:
+          WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+          MSG: "❌ ChargePin CI 실패 · ${{ github.ref_name }} · ${{ github.actor }} · ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        run: |
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "ALERT_WEBHOOK_URL not set, skip"
+            exit 0
+          fi
+          curl -fsS -X POST -H "Content-Type: application/json" \
+            -d "$(jq -n --arg m "$MSG" '{content:$m}')" "$WEBHOOK_URL"

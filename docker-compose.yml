@@ -8,9 +8,11 @@ services:
       - .env
     environment:
       AUTOHEAL_LOG_PATH: /ops/logs/autoheal.jsonl
+      CHARGEPIN_LOG_DIR: /app/logs
       CHARGEPIN_FRONTEND_HEALTH_URL: http://frontend:8501/_stcore/health
     volumes:
       - ./ops/logs:/ops/logs:ro
+      - ./logs:/app/logs
     healthcheck:
       test:
         [
