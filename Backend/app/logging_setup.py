@@ -61,19 +61,31 @@ def _safe_value(value: Any, *, key: object | None = None) -> Any:
     return str(value)[:_MAX_STRING_LENGTH]
 
 
-def append_operation_log(event: dict[str, Any], *, level: str = "INFO") -> None:
-    """Append one safe JSON event; an I/O failure must never stop a search."""
+def safe_operation_record(event: dict[str, Any], *, level: str = "INFO") -> dict[str, Any] | None:
+    """Build the single, safe event shape shared by logs and PostgreSQL."""
+    occurred_at = event.get("occurred_at") if isinstance(event.get("occurred_at"), str) else _utc_now()
+    clean_event = _safe_value(event)
+    if not isinstance(clean_event, dict):
+        return None
+    clean_event.pop("occurred_at", None)
+    return {
+        "timestamp_utc": occurred_at,
+        "level": level,
+        **clean_event,
+    }
+
+
+def append_operation_log(event: dict[str, Any], *, level: str = "INFO") -> dict[str, Any] | None:
+    """Append one safe JSON event and return it for optional DB persistence.
+
+    A log write failure must never stop a search.  Returning the already
+    sanitised record lets the caller use the same privacy policy for both
+    storage targets.
+    """
+    record = safe_operation_record(event, level=level)
+    if record is None:
+        return None
     try:
-        occurred_at = event.get("occurred_at") if isinstance(event.get("occurred_at"), str) else _utc_now()
-        clean_event = _safe_value(event)
-        if not isinstance(clean_event, dict):
-            return
-        clean_event.pop("occurred_at", None)
-        record = {
-            "timestamp_utc": occurred_at,
-            "level": level,
-            **clean_event,
-        }
         line = json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n"
         log_dir = _log_directory()
         with _WRITE_LOCK:
@@ -85,4 +97,28 @@ def append_operation_log(event: dict[str, Any], *, level: str = "INFO") -> None:
                     error_log.write(line)
     except (OSError, TypeError, ValueError):
         # Logs are evidence, never a reason for the user request itself to fail.
-        return
+        pass
+    return record
+
+
+def read_recent_operation_logs(limit: int = 30) -> list[dict[str, Any]]:
+    """Return bounded, valid, already-sanitised service log records for ops UI."""
+    safe_limit = max(1, min(int(limit), 200))
+    try:
+        lines = (_log_directory() / "service.log").read_text(encoding="utf-8").splitlines()[-safe_limit * 3:]
+    except (OSError, UnicodeError):
+        return []
+
+    records: list[dict[str, Any]] = []
+    for line in lines:
+        try:
+            value = json.loads(line)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        clean = _safe_value(value)
+        if not isinstance(clean, dict):
+            continue
+        if not isinstance(clean.get("timestamp_utc"), str) or not isinstance(clean.get("event_type"), str):
+            continue
+        records.append(clean)
+    return list(reversed(records[-safe_limit:]))

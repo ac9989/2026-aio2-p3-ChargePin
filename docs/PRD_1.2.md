@@ -5,7 +5,7 @@
 - 문서 버전: 1.2
 - 작성일: 2026-11-09
 - 기준: `main`의 FastAPI·Streamlit·Docker Compose·GitHub Actions 구현
-- 1.1 대비 반영: 구조화 운영 로그 영속, Discord 실패 알림, 관련 보안·검증 기준 명시
+- 1.1 대비 반영: 구조화 운영 로그 영속, Discord 실패 알림, PostgreSQL 운영 이력 및 파일 로그 이중 저장
 
 ## 1. 제품 정의
 
@@ -29,7 +29,7 @@
 | 검색 | 서울 내 카카오 후보를 선택한 뒤 표시 범위 1·2·3 km와 급속·완속 조건으로 결과를 표시한다. |
 | 신뢰성 | 결과마다 출처·최종 보고 시각을 표시하고 지연·이상 데이터는 안전한 상태로 바꾼다. |
 | 자연어 | 명확한 장소·수치는 규칙으로 빠르게 처리하고 문맥형 조건 변경만 LLM으로 해석한다. |
-| 추적 | `request_id`로 Handoff·재시도·Critic 판정을 연결하고, 안전한 운영 이벤트를 파일 로그로 남긴다. |
+| 추적 | `request_id`로 Handoff·재시도·Critic 판정을 연결하고, 안전한 운영 이벤트를 PostgreSQL과 파일 로그에 남긴다. |
 | 배포 | CI 실패 시 다음 빌드·게시 단계가 차단되고 Discord 웹훅 알림을 보낸다. |
 
 ## 3. 사용자·역할
@@ -93,12 +93,13 @@
 
 | ID | 요구사항 | 수용 기준 |
 | --- | --- | --- |
-| FR-11 | 운영 대시보드는 요청·가드레일·재시도·품질·힐링 상태를 표시한다. | 현재 백엔드 프로세스의 운영 집계와 Compose·Watchdog 스냅샷을 관리자에게 제공한다. |
-| FR-12 | 운영 이벤트를 구조화 로그로 남긴다. | `logs/service.log`에 JSON 한 줄 단위로 Handoff 전이, 감사, 결과 요약, 재시도, 가드레일, 오류를 기록한다. |
+| FR-11 | 운영 대시보드는 요청·가드레일·재시도·품질·힐링·이력 저장소 상태를 표시한다. | PostgreSQL 누적 이력과 `logs/service.log` 감사 이력을 구분해 관리자에게 제공한다. |
+| FR-12 | 운영 이벤트를 이중 저장한다. | `operation_events`와 `logs/service.log`에 Handoff 전이, 감사, 결과 요약, 재시도, 가드레일, 오류의 안전한 메타데이터를 기록한다. |
 | FR-13 | 오류 로그를 분리한다. | 오류 수준 이벤트만 `logs/errors.log`에 기록한다. 로그 실패가 검색 요청을 중단시키지 않는다. |
 | FR-14 | 로그에 비밀·원문을 남기지 않는다. | 채팅 원문, API/서비스 키, Bearer 토큰, 제공처 원문 응답을 기록하지 않는다. |
 | FR-15 | CI·CD 실패를 팀 채널에 알린다. | `ALERT_WEBHOOK_URL` Secret이 설정된 경우 실패한 CI 또는 CD 실행 링크를 Discord 웹훅으로 전송한다. Secret 미설정 시 알림만 건너뛴다. |
 | FR-16 | 운영자는 실패 요청을 수동 재처리하고 캐시를 갱신할 수 있다. | 관리자 요청 재처리는 요청당 최대 2회이며, 횟수·사유가 안전한 운영 이벤트로 남는다. |
+| FR-17 | DB 연결 오류가 검색을 멈추지 않는다. | DB 쓰기·읽기 실패 시 DB 상태만 `연결 대기`로 낮추고 파일 로그·현재 메모리 폴백을 계속 사용한다. |
 
 ## 6. 데이터·보안 정책
 
@@ -107,7 +108,7 @@
 | 장소 후보·좌표·지도 | 카카오 API/SDK, 장소 해석·지도 표시 | 충전 상태 근거로 사용 금지 |
 | 충전기 상태·보고 시각 | 환경공단 API, 충전 상태 판정 | 지연·누락·이상값은 Critic이 안전 처리 |
 | SearchRequest·Handoff·대화 문맥 | 백엔드 프로세스 메모리 | 컨테이너 재기동 시 초기화, 채팅 원문은 운영 로그에 쓰지 않음 |
-| 운영 이벤트 | `logs/service.log`, `logs/errors.log` | Docker Compose 볼륨으로 로컬·EC2 호스트에 남으며 Git에는 올리지 않음 |
+| 운영 이벤트 | PostgreSQL `operation_events`, `logs/service.log`, `logs/errors.log` | 안전한 이벤트만 DB·파일에 이중 저장, DB 장애 시 파일 로그 폴백, Git에는 올리지 않음 |
 | 자연어 구조화 | OpenAI GPT-4o mini | 문맥형 조건 해석만 수행하며 제공처 도구·시크릿에 접근하지 않음 |
 | Discord 웹훅 URL | GitHub Actions Secret `ALERT_WEBHOOK_URL` | 코드·`.env`·로그·화면에 원문을 남기지 않음 |
 
@@ -117,9 +118,9 @@
 | --- | --- |
 | 응답 속도 | 명확한 장소·숫자는 규칙 빠른 경로를 우선하며 LLM은 필요한 문맥형 요청에만 호출한다. |
 | 장애 격리 | 재시도 가능한 Provider 오류와 일시적 Executor·Planner 구조화 오류는 0.25초·0.5초 간격으로 자동 최대 2회 재시도한다. 인증 오류·지속 오류는 안전한 종료로 전환한다. |
-| 기록 보존 | Handoff·세션은 메모리지만 안전한 운영 이벤트는 호스트 `logs` 볼륨에 남는다. |
+| 기록 보존 | Handoff·세션은 메모리지만 안전한 운영 이벤트는 Compose PostgreSQL과 호스트 `logs` 볼륨에 남는다. |
 | 키 관리 | 시크릿은 `.env` 또는 GitHub Secret으로 주입하고 브라우저에는 지도 JavaScript 키만 전달한다. |
-| 테스트 | Backend 46개, Frontend 24개, Ops 13개 테스트를 CI 게이트로 사용한다. |
+| 테스트 | Backend 48개, Frontend 24개, Ops 13개 테스트를 CI 게이트로 사용한다. |
 | 배포 | `pytest` → Compose 검증·이미지 빌드 → GHCR 게시(main) → AWS EC2 Docker Compose 배포·healthcheck → 실패 시 이전 SHA 롤백을 시도한다. |
 | 실패 알림 | CI/CD에서 실패한 경우 Discord 웹훅 알림을 보내며, 알림 Secret 미설정 자체는 배포 실패로 처리하지 않는다. |
 
@@ -127,7 +128,7 @@
 
 | 대상 | 검증 범위 |
 | --- | --- |
-| Backend | Planner 빠른/LLM 경로, SearchRequest, 서울 범위, Guardrail, Critic, Handoff, 재시도, Test API, 구조화 로그 보안 |
+| Backend | Planner 빠른/LLM 경로, SearchRequest, 서울 범위, Guardrail, Critic, Handoff, 재시도, Test API, 구조화 로그·DB 안전 저장 |
 | Frontend | 채팅 안내, 지도 HTML 안전성, 역할 UI, 대시보드 데이터 계약 |
 | Ops | Watchdog 정책, 재시작 제한·쿨다운, Docker 배포 실패·롤백 정책 |
 | 장애 시나리오 | normal, stale, invalid_count, timeout(FT-01), executor_exception(FT-02), llm_invalid_schema(FT-04) |
@@ -136,7 +137,7 @@
 ## 9. 범위 제외
 
 - Kubernetes Pod·Service·매니페스트 운영
-- PostgreSQL·Redis 같은 영속 DB와 DB 연결 장애 시나리오
+- Redis 같은 별도 캐시 DB와 DB 연결 오류의 반복 장애시험
 - 일반 주차장 탐색, 실시간 주차 빈자리, 빈자리 예측
 - 충전·주차 요금과 외부인 이용 가능 여부의 확정 표시
 - 역할 승급·강등 관리 화면

@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from .logging_setup import append_operation_log
+from .persistence import PostgresOperationStore
 
 
 @dataclass
@@ -14,9 +15,9 @@ class MemoryKeeper:
     results: dict[str, dict[str, Any]] = field(default_factory=dict)
     chat_contexts: dict[str, dict[str, Any]] = field(default_factory=dict)
     operation_events: list[dict[str, Any]] = field(default_factory=list)
+    event_store: PostgresOperationStore = field(default_factory=PostgresOperationStore)
 
-    @staticmethod
-    def _write(event_type: str, status: str, *, request_id: str | None = None,
+    def _write(self, event_type: str, status: str, *, request_id: str | None = None,
                level: str = "INFO", **details: Any) -> None:
         """Persist safe operational facts without retaining chat text or secrets."""
         event: dict[str, Any] = {
@@ -27,7 +28,9 @@ class MemoryKeeper:
         }
         if request_id:
             event["request_id"] = request_id
-        append_operation_log(event, level=level)
+        safe_record = append_operation_log(event, level=level)
+        if safe_record is not None:
+            self.event_store.record(safe_record)
 
     def start(self, request_id: str, handoff: dict[str, Any]) -> None:
         self.handoffs[request_id] = {**handoff, "retry_history": [], "audit_events": ["request_created"]}
@@ -103,3 +106,25 @@ class MemoryKeeper:
         )
         self.record_audit(request_id, f"{kind}_retry_requested")
         return attempt
+
+    def persisted_events(self, limit: int = 200, *, since: datetime | None = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        """Use durable events when available, otherwise keep the live-memory view."""
+        stored = self.event_store.recent(limit, since=since)
+        state = self.event_store.snapshot()
+        if state["available"]:
+            return stored, state
+        fallback = self.operation_events[-limit:]
+        if since is not None:
+            fallback = [event for event in fallback if _event_time(event.get("occurred_at")) >= since]
+        return list(reversed(fallback)), state
+
+
+def _event_time(value: Any) -> datetime:
+    """Best-effort timestamp parser for the in-memory fallback only."""
+    if not isinstance(value, str):
+        return datetime.min.replace(tzinfo=timezone.utc)
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return datetime.min.replace(tzinfo=timezone.utc)
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)

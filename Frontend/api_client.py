@@ -126,8 +126,9 @@ class ChargePinApi:
 
     # Operator-only server views for the dashboard. app.py calls them only when
     # CHARGEPIN_DASHBOARD_SERVER_OPS=true, after the backend serves these endpoints.
-    def ops_summary(self, access_token: str) -> dict[str, Any]:
-        return self._request("GET", "/ops/summary", access_token=access_token, timeout=5)
+    def ops_summary(self, access_token: str, hours: int = 24) -> dict[str, Any]:
+        return self._request("GET", "/ops/summary", access_token=access_token, timeout=5,
+                             params={"hours": max(1, min(int(hours), 168))})
 
     def ops_platform(self, access_token: str) -> dict[str, Any]:
         return self._request("GET", "/ops/platform", access_token=access_token, timeout=5)

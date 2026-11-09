@@ -5,8 +5,8 @@
 - 문서 버전: 1.1
 - 작성일: 2026-11-09
 - 기준 커밋: `467e1e1`
-- 대상 범위: Docker Compose, AWS EC2, Auto Healing, 구조화 로그, Test API 장애시험
-- 1.0 대비 반영: 안전한 운영 로그 영속, 실제 9회 장애시험 결과, Discord 실패 알림 증빙
+- 대상 범위: Docker Compose, AWS EC2, Auto Healing, PostgreSQL 운영 이력, 구조화 로그, Test API 장애시험
+- 1.0 대비 반영: 안전한 운영 로그·PostgreSQL 이중 저장, 실제 9회 장애시험 결과, Discord 실패 알림 증빙
 
 ---
 
@@ -19,9 +19,9 @@ ChargePin은 Streamlit 프론트엔드와 FastAPI 백엔드를 Docker Compose로
 1. **입력·계획 층**: 위험한 요청과 LLM 구조화 오류를 Provider 호출 전에 차단한다.
 2. **조회·품질 층**: 재시도 가능한 Provider 오류와 일시적 Executor·Planner 오류는 최대 2회 재시도하고, 지속 오류·지연·이상값은 안전한 응답으로 전환한다.
 3. **컨테이너 층**: healthcheck, Compose restart 정책, 로컬 Watchdog, 배포 SHA 롤백 정책으로 컨테이너 장애를 다룬다.
-4. **운영 관측 층**: Handoff·세션은 메모리로 관리하고, 익명화된 운영 이벤트는 호스트의 JSONL 로그에 남긴다. CI/CD 실패는 Discord 웹훅으로 팀 채널에 알린다.
+4. **운영 관측 층**: Handoff·세션은 메모리로 관리하고, 익명화된 운영 이벤트는 PostgreSQL과 호스트 JSONL 로그에 함께 남긴다. DB 장애 시 파일 로그를 폴백으로 사용한다. CI/CD 실패는 Discord 웹훅으로 팀 채널에 알린다.
 
-Kubernetes, ChargePin 전용 DB·Redis는 이번 범위에 사용하지 않는다.
+Kubernetes와 Redis는 이번 범위에 사용하지 않는다. ChargePin 운영 이벤트 전용 PostgreSQL은 Docker Compose에 포함한다.
 
 ## 2. 실행·배포 구조
 
@@ -30,6 +30,8 @@ flowchart LR
     DEV[개발 PC] -->|docker compose| LOCAL[Docker Compose]
     LOCAL --> FE[Streamlit :8501]
     LOCAL --> BE[FastAPI :8000]
+    LOCAL --> DB[(PostgreSQL :5432)]
+    BE --> DB
     BE --> LOG[(logs/service.log\nlogs/errors.log)]
     WATCH[로컬 Watchdog] -->|감시·정책 로그| ALOG[ops/logs/autoheal.jsonl]
 
@@ -51,11 +53,13 @@ flowchart LR
 | --- | --- | --- | --- |
 | `backend` | `8000` | `.env` 런타임 주입 | `GET /healthz`, 15초 간격, 3회 재시도 |
 | `frontend` | `8501` | backend healthy 이후 기동 | `GET /_stcore/health`, 15초 간격, 3회 재시도 |
+| `postgres` | `5432` (Compose 내부) | backend와 독립 기동 | `pg_isready`, 10초 간격, 5회 재시도 |
 
 - 프론트엔드는 Compose 서비스명 `backend`로 FastAPI에 연결한다.
 - 외부 API·OpenAI 키는 backend에만, 브라우저에는 카카오 지도 JavaScript 키만 전달한다.
 - `./logs:/app/logs`를 backend에 마운트해 컨테이너 재기동 뒤에도 `service.log`, `errors.log`를 호스트에 남긴다.
 - `./ops/logs:/ops/logs:ro`는 Watchdog JSONL을 운영 대시보드용으로 읽는 별도 마운트다.
+- PostgreSQL은 named volume `chargepin_postgres_data`에 `operation_events`만 저장하며, DB 연결 실패가 backend healthcheck·검색 요청을 중단시키지 않는다.
 
 ### 2.2 AWS EC2 배포 구성
 
@@ -124,7 +128,7 @@ Test API는 실제 제공처·LLM에 장애를 발생시키지 않는다. 아래
 | FT-04 `llm_invalid_schema` | 3 | HTTP 200, `NEEDS_INPUT`, Provider 미호출 | 각 실행마다 Planner 자동 재시도 2회 |
 | 합계 | **9 / 9** | 기대한 안전한 종료·응답 확인 | - |
 
-이 수치는 **현재 구현한 3개 시나리오의 실행 통과 수**다. 교육 가이드의 FT-03 DB 연결 오류는 공통 요구로 해석될 수 있으나, ChargePin은 DB를 서비스 구성에 포함하지 않아 해당 시나리오를 구현·시험하지 않았다. 따라서 9/9를 “공통 4종 전체 완료”로 표현하지 않는다.
+이 수치는 **현재 실행 증빙을 확보한 3개 시나리오의 통과 수**다. 이후 PostgreSQL 운영 이력을 도입했고 DB 연결 실패 시 파일 로그·메모리 폴백으로 검색을 유지하도록 구현했다. 다만 FT-03을 3회 반복한 별도 장애 증빙은 아직 없으므로, 9/9를 “공통 4종 전체 완료”로 표현하지 않는다.
 
 timeout의 경우 외부 Provider가 정상으로 회복된 증거가 아니라, 정해진 재시도 한도 뒤 사용자에게 안전한 실패로 전환된 증거다. 응답 안전성·재시도 횟수는 확인했지만 실제 외부 API 복구 시간은 이 fixture 시험의 측정 대상이 아니다.
 
@@ -132,14 +136,14 @@ timeout의 경우 외부 Provider가 정상으로 회복된 증거가 아니라,
 
 | 구분 | 결과·근거 |
 | --- | --- |
-| Backend pytest | 구조화 로그 보안·Executor/Planner bounded retry 테스트가 추가된 뒤 **46 passed** 확인 |
+| Backend pytest | 구조화 로그·PostgreSQL 안전 저장·Executor/Planner bounded retry 테스트가 추가된 뒤 **48 passed** 확인 |
 | Frontend pytest | **24 passed** (기존 CI 게이트) |
 | Ops pytest | **13 passed** (Watchdog·배포 롤백 정책) |
 | 최신 main CI | 성공 — [run 42561841488](https://github.com/ac9989/2026-aio2-p3-ChargePin/actions/runs/42561841488), 커밋 `467e1e1` |
 | 최신 main CD | 성공 — [run 42562090395](https://github.com/ac9989/2026-aio2-p3-ChargePin/actions/runs/42562090395), 커밋 `467e1e1` |
 | 실패 알림 | feature 브랜치의 의도적 pytest 실패 시 Discord 수신 확인 — [실패 run 42557685477](https://github.com/ac9989/2026-aio2-p3-ChargePin/actions/runs/42557685477) |
 
-현재 코드 단위·계약·운영 정책 테스트의 합계는 **83개(Backend 46, Frontend 24, Ops 13)**다. Docker 통합 화면·EC2의 실제 서비스 장애 롤아웃은 별도 화면/실행 증빙으로 구분한다.
+현재 코드 단위·계약·운영 정책 테스트의 합계는 **85개(Backend 48, Frontend 24, Ops 13)**다. Docker 통합 화면·EC2의 실제 서비스 장애 롤아웃은 별도 화면/실행 증빙으로 구분한다.
 
 ## 7. 운영 절차
 
@@ -176,13 +180,13 @@ Get-Content logs\service.log -Tail 10
 
 | 항목 | 현재 상태 | 후속 조치 |
 | --- | --- | --- |
-| DB 장애(FT-03) | DB 미사용으로 미구현 | DB를 도입하는 경우 연결 오류·재연결 시험을 별도 추가 |
+| DB 장애(FT-03) | DB 폴백 구현, 반복 장애 증빙 미확보 | DB 컨테이너 중지·재기동 3회와 파일 로그 폴백을 별도 기록 |
 | Watchdog 상시 운영 | 로컬 수동 실행 | EC2 프로세스 감독·알림 에스컬레이션 검토 |
 | AWS 서비스 장애 주입 | 서비스 영향 위험으로 미실행 | 승인된 시간·격리 환경에서 별도 검증 |
 | 운영 대시보드 이력 | 현재 프로세스 집계 중심 | 파일 로그를 재기동 후 이력 조회 화면으로 확장 가능 |
 
 ## 9. 결론
 
-ChargePin은 Docker Compose, healthcheck, GHCR SHA 이미지, AWS SSM 배포·롤백 정책, 로컬 Watchdog, 안전한 구조화 로그, Test API/Test Checker를 구현했다. 구현한 3종의 장애 시나리오는 각 3회로 총 9/9 안전한 기대 결과를 확인했고, 최신 main의 CI/CD 성공과 CI 실패 시 Discord 알림 수신도 증빙했다.
+ChargePin은 Docker Compose, healthcheck, GHCR SHA 이미지, AWS SSM 배포·롤백 정책, 로컬 Watchdog, PostgreSQL·구조화 파일 로그, Test API/Test Checker를 구현했다. 구현한 3종의 장애 시나리오는 각 3회로 총 9/9 안전한 기대 결과를 확인했고, 최신 main의 CI/CD 성공과 CI 실패 시 Discord 알림 수신도 증빙했다.
 
-다만 DB 미도입에 따른 FT-03 미구현, EC2 서비스 본체의 고의 장애 주입, EC2 상시 Watchdog는 남은 한계다.
+다만 FT-03의 3회 반복 실행 증빙, EC2 서비스 본체의 고의 장애 주입, EC2 상시 Watchdog는 남은 한계다.

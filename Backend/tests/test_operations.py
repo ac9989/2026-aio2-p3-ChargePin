@@ -46,6 +46,16 @@ class OperationsSnapshotTests(unittest.TestCase):
         with patch.dict(os.environ, {"AUTOHEAL_LOG_PATH": ""}, clear=False):
             self.assertEqual(healing_snapshot()["events"], [])
 
+    def test_compose_snapshot_includes_postgres_only_when_database_is_enabled(self) -> None:
+        with patch("app.operations._healthy", return_value=True), patch("app.operations._tcp_ready", return_value=True), patch.dict(
+            os.environ, {"CHARGEPIN_DATABASE_ENABLED": "true", "POSTGRES_HOST": "postgres"}, clear=False
+        ):
+            snapshot = compose_platform_snapshot()
+
+        postgres = next(item for item in snapshot["workloads"] if item["name"] == "postgres")
+        self.assertEqual(postgres["desired"], 1)
+        self.assertEqual(postgres["ready"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

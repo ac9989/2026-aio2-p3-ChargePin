@@ -932,7 +932,7 @@ def render_dashboard() -> None:
     if os.environ.get("CHARGEPIN_DASHBOARD_SERVER_OPS", "").strip().lower() == "true":
         token = access_token()
         loaders = {
-            "server_summary_loader": lambda: API.ops_summary(token),
+            "server_summary_loader": lambda hours: API.ops_summary(token, hours),
             "platform_loader": lambda: API.ops_platform(token),
             "healing_loader": lambda: API.ops_healing(token),
         }

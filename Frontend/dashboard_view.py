@@ -391,6 +391,88 @@ def operations_action_panel(api: Any, server: dict[str, Any] | None) -> None:
                     st.rerun()
 
 
+OPERATION_EVENT_LABELS = {
+    "api_request": "API 호출",
+    "search": "충전소 검색",
+    "guardrail": "가드레일",
+    "retry_history": "재시도 이력",
+    "retry": "재처리",
+    "handoff": "Handoff",
+    "audit": "감사 이벤트",
+    "result": "결과 저장",
+    "agent_error": "에이전트 오류",
+    "cache_refresh": "캐시 갱신",
+    "test_scenario": "상태 시연",
+}
+
+
+def _operation_rows(events: Any) -> list[dict[str, Any]]:
+    if not isinstance(events, list):
+        return []
+    rows: list[dict[str, Any]] = []
+    for event in events[:20]:
+        if not isinstance(event, dict):
+            continue
+        timestamp = event_time(event.get("occurred_at") or event.get("timestamp_utc"))
+        details = []
+        for key, caption in (("stage", "단계"), ("category", "범주"), ("attempt", "시도"),
+                             ("status_code", "HTTP"), ("actor_role", "역할")):
+            value = event.get(key)
+            if isinstance(value, (str, int, float)) and not isinstance(value, bool):
+                details.append(f"{caption} {value}")
+        rows.append({
+            "시각 (KST)": display_time(timestamp, full=True) if timestamp else "시각 확인 필요",
+            "처리": OPERATION_EVENT_LABELS.get(str(event.get("event_type")), str(event.get("event_type") or "기타")),
+            "상태": str(event.get("status") or "확인 필요"),
+            "요청 ID": str(event.get("request_id") or "—"),
+            "안전 메타데이터": " · ".join(details) or "—",
+        })
+    return rows
+
+
+def persistence_history_panel(server: dict[str, Any] | None) -> None:
+    """Show database and append-only file log histories as distinct evidence."""
+    with st.container(border=True, key="overview_persistence_history"):
+        section_title("운영 이력 저장소", "DB 누적 이력 · 파일 로그 감사 이력 · 원문 및 비밀값 미저장")
+        if not isinstance(server, dict):
+            empty_chart("운영 API 연결을 확인하는 중입니다")
+            return
+        persistence = server.get("persistence")
+        persistence = persistence if isinstance(persistence, dict) else {}
+        database = persistence.get("database") if isinstance(persistence.get("database"), dict) else {}
+        logs = persistence.get("logs") if isinstance(persistence.get("logs"), dict) else {}
+        db_available = bool(database.get("available"))
+        db_enabled = bool(database.get("enabled"))
+        db_state = "정상" if db_available else "연결 대기" if db_enabled else "미설정"
+        window_hours = database.get("window_hours")
+        window_label = ("1시간" if window_hours == 1 else "24시간" if window_hours == 24 else "7일"
+                        if window_hours == 168 else "선택 기간")
+        log_count = logs.get("event_count") if isinstance(logs.get("event_count"), int) else 0
+        db_count = database.get("event_count") if isinstance(database.get("event_count"), int) else 0
+        metric_row("persistence_kpis", [
+            ("PostgreSQL 이력", f"{db_count:,}건", f"{window_label} · 재시작 후에도 유지", "good" if db_available else "warn", "server"),
+            ("파일 로그", f"{log_count:,}건", f"{window_label} · DB 장애 시에도 계속 기록", "good" if log_count else "neutral", "check"),
+            ("DB 연결", db_state, "DB 장애는 검색을 중단시키지 않음", "good" if db_available else "warn", "pulse"),
+        ])
+        db_rows = _operation_rows(server.get("recent_events") if db_available else [])
+        log_rows = _operation_rows(logs.get("recent_events"))
+        left, right = st.columns(2, gap="medium")
+        with left:
+            section_title("DB 운영 이력", f"PostgreSQL · {window_label} · 최근 20건")
+            if db_rows:
+                st.dataframe(pd.DataFrame(db_rows), hide_index=True, width="stretch", height=250)
+            else:
+                empty_chart("DB 이력이 아직 없거나 연결을 기다리고 있습니다")
+        with right:
+            section_title("파일 로그 이력", f"logs/service.log · {window_label} · 최근 20건")
+            if log_rows:
+                st.dataframe(pd.DataFrame(log_rows), hide_index=True, width="stretch", height=250)
+            else:
+                empty_chart("기록된 파일 로그가 없습니다")
+        if db_enabled and not db_available:
+            st.caption("PostgreSQL 연결을 재시도하고 있습니다. 그동안 요청·재시도·가드레일 이력은 파일 로그와 현재 프로세스 메모리에 남습니다.")
+
+
 def overview_view(data: dict[str, Any], guard: dict[str, Any], health: str,
                   providers: list[tuple[str, str]], items: list[dict[str, Any]], pipeline: dict[str, Any],
                   api: Any, server: dict[str, Any] | None) -> None:
@@ -404,6 +486,7 @@ def overview_view(data: dict[str, Any], guard: dict[str, Any], health: str,
          f'입력 차단 {guard["input_blocked"]:,} · 안전 응답 {guard["output_safe"]:,} · 현재 세션', "neutral", "shield"),
         ("증빙 확보", f'{score["met"]} / {score["total"]}', "컴플라이언스 자가 점검 · 충족 항목", "neutral", "check"),
     ])
+    persistence_history_panel(server)
     with st.container(key="overview_charts"):
         left, right = st.columns([1.25, 1], gap="medium")
         with left:
@@ -765,11 +848,11 @@ def compliance_view(reference: dict[str, Any], items: list[dict[str, Any]]) -> N
 def render_operations_dashboard(api: Any, header: Callable[..., str | None],
                                 providers: Callable[[], list[tuple[str, str]]],
                                 reference_loader: Callable[[], dict[str, Any]],
-                                server_summary_loader: Callable[[], dict[str, Any] | None] | None = None,
+                                server_summary_loader: Callable[[int], dict[str, Any] | None] | None = None,
                                 platform_loader: Callable[[], dict[str, Any] | None] | None = None,
                                 healing_loader: Callable[[], dict[str, Any] | None] | None = None) -> None:
     """Optional server hooks (handoff/2026-11-08/BACKEND_HANDOFF.md):
-    server_summary_loader → GET /api/v1/ops/summary, platform_loader → GET /api/v1/ops/platform,
+    server_summary_loader → GET /api/v1/ops/summary?hours=..., platform_loader → GET /api/v1/ops/platform,
     healing_loader → GET /api/v1/ops/healing. A hook that is missing or fails renders "연결 대기"."""
     def navigation() -> str | None:
         with st.container(key="header_menu", width="stretch"):
@@ -803,7 +886,8 @@ def render_operations_dashboard(api: Any, header: Callable[..., str | None],
                     github_jobs.clear()
                     latest_main_run.clear()
                     st.rerun()
-    cutoff = datetime.now(KST) - timedelta(hours={"1시간": 1, "24시간": 24, "7일": 168}[period])
+    selected_hours = {"1시간": 1, "24시간": 24, "7일": 168}[period]
+    cutoff = datetime.now(KST) - timedelta(hours=selected_hours)
     events = [event for event in st.session_state.get("api_events", [])
               if (when := event_time(event.get("observed_at"))) is not None and when >= cutoff]
     data = summarize_events(events)
@@ -817,7 +901,7 @@ def render_operations_dashboard(api: Any, header: Callable[..., str | None],
         except (ApiError, requests.RequestException, ValueError):
             return None
 
-    server = load(server_summary_loader) if menu in ("운영 개요", "가드레일", "안정성·힐링") else None
+    server = load(lambda: server_summary_loader(selected_hours)) if server_summary_loader and menu in ("운영 개요", "가드레일", "안정성·힐링") else None
     platform = normalize_platform(load(platform_loader)) if menu in ("배포 파이프라인", "컴플라이언스", "운영 개요") else None
     healing = normalize_healing(load(healing_loader)) if menu in ("안정성·힐링", "컴플라이언스", "운영 개요") else None
     needs_pipeline = menu in ("운영 개요", "배포 파이프라인", "컴플라이언스")

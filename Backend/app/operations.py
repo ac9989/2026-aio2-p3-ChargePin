@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import socket
 from typing import Any
 from urllib.error import URLError
 from urllib.request import urlopen
@@ -34,6 +35,15 @@ def _healthy(url: str) -> bool:
         return False
 
 
+def _tcp_ready(host: str, port: int) -> bool:
+    """Observe the Compose database port without accessing its contents."""
+    try:
+        with socket.create_connection((host, port), timeout=1):
+            return True
+    except (OSError, ValueError):
+        return False
+
+
 def _env_nonnegative_int(name: str, default: int) -> int:
     try:
         return max(0, int(os.environ.get(name, str(default))))
@@ -47,27 +57,40 @@ def compose_platform_snapshot() -> dict[str, Any]:
         "CHARGEPIN_FRONTEND_HEALTH_URL", "http://frontend:8501/_stcore/health"
     )
     frontend_ready = int(_healthy(frontend_url))
+    database_enabled = os.environ.get("CHARGEPIN_DATABASE_ENABLED", "false").casefold() == "true"
+    database_ready = int(database_enabled and _tcp_ready(
+        os.environ.get("POSTGRES_HOST", "postgres"),
+        _env_nonnegative_int("POSTGRES_PORT", 5432),
+    ))
     configured_runtime_keys = sum(bool(os.environ.get(name)) for name in _RUNTIME_CONFIG_NAMES)
+    workloads = [
+        {
+            "kind": "ComposeService", "name": "backend", "desired": 1, "ready": 1,
+            "restarts": None, "image": os.environ.get("CHARGEPIN_BACKEND_IMAGE") or None,
+            "liveness": "/healthz", "readiness": "/healthz",
+        },
+        {
+            "kind": "ComposeService", "name": "frontend", "desired": 1, "ready": frontend_ready,
+            "restarts": None, "image": os.environ.get("CHARGEPIN_FRONTEND_IMAGE") or None,
+            "liveness": "/_stcore/health", "readiness": "/_stcore/health",
+        },
+    ]
+    services = [
+        {"name": "backend", "type": "Compose network", "port": 8000, "endpoints": 1},
+        {"name": "frontend", "type": "Compose network", "port": 8501, "endpoints": frontend_ready},
+    ]
+    if database_enabled:
+        workloads.append({
+            "kind": "ComposeService", "name": "postgres", "desired": 1, "ready": database_ready,
+            "restarts": None, "image": "postgres:16-alpine", "liveness": "pg_isready", "readiness": "pg_isready",
+        })
+        services.append({"name": "postgres", "type": "Compose network", "port": 5432, "endpoints": database_ready})
     return {
         "source": "compose",
         "observed_at": _utc_now(),
         "namespace": os.environ.get("COMPOSE_PROJECT_NAME", "docker-compose"),
-        "workloads": [
-            {
-                "kind": "ComposeService", "name": "backend", "desired": 1, "ready": 1,
-                "restarts": None, "image": os.environ.get("CHARGEPIN_BACKEND_IMAGE") or None,
-                "liveness": "/healthz", "readiness": "/healthz",
-            },
-            {
-                "kind": "ComposeService", "name": "frontend", "desired": 1, "ready": frontend_ready,
-                "restarts": None, "image": os.environ.get("CHARGEPIN_FRONTEND_IMAGE") or None,
-                "liveness": "/_stcore/health", "readiness": "/_stcore/health",
-            },
-        ],
-        "services": [
-            {"name": "backend", "type": "Compose network", "port": 8000, "endpoints": 1},
-            {"name": "frontend", "type": "Compose network", "port": 8501, "endpoints": frontend_ready},
-        ],
+        "workloads": workloads,
+        "services": services,
         "config": [
             {
                 "kind": "RuntimeConfig", "name": "backend runtime configuration",

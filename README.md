@@ -88,7 +88,7 @@ Streamlit 사용자 화면과 운영 대시보드가 FastAPI 백엔드에 연결
 | 출처별 의미의 분리 | 카카오는 장소·좌표, 환경공단은 충전기 상태·갱신 시각의 근거로 사용해 장소 후보와 실제 상태를 혼동하지 않습니다. |
 | 조회 성공과 품질 검증의 분리 | API 응답이 성공해도 Critic이 수량·시각을 따로 검사합니다. 검증하지 못한 값은 추정하지 않고 표시를 제한합니다. |
 
-시스템 구성·API·Handoff·정책의 상세 배경은 [아키텍처 설계서 1.2](docs/P3-1_Architecture_Design_1.2.md)에, 기능 범위는 [PRD 1.2](docs/PRD_1.2.md)에 정리되어 있습니다. 두 문서는 구조화 운영 로그와 Discord 실패 알림까지 포함한 현재 구현 기준입니다.
+시스템 구성·API·Handoff·정책의 상세 배경은 [아키텍처 설계서 1.2](docs/P3-1_Architecture_Design_1.2.md)에, 기능 범위는 [PRD 1.2](docs/PRD_1.2.md)에 정리되어 있습니다. 두 문서는 PostgreSQL 운영 이력, 구조화 파일 로그, Discord 실패 알림까지 포함한 현재 구현 기준입니다.
 
 <details>
 <summary><b>현재 구현의 역할·검색 경로·제약</b></summary>
@@ -106,7 +106,7 @@ Streamlit 사용자 화면과 운영 대시보드가 FastAPI 백엔드에 연결
 
 백엔드에 `/search/{request_id}/confirm` 단계가 있지만 **현재 챗 UI는 이를 자동 호출합니다.** 별도 사용자 확인이나 챗 후보 선택 화면은 현재 제공하지 않으며, 장소 후보 조회는 확인 단계 이전에 수행합니다.
 
-계획·실행·검증은 `request_id`로 연결합니다. Handoff와 채팅 문맥은 현재 백엔드 프로세스 범위이지만, 안전한 운영 이벤트는 `logs/service.log`에 JSON 한 줄 단위로 남아 재기동 뒤에도 확인할 수 있습니다. 설계의 Circuit Breaker·중복 요청 제어·심층 헬스체크를 모두 구현한 상태는 아닙니다.
+계획·실행·검증은 `request_id`로 연결합니다. Handoff와 채팅 문맥은 현재 백엔드 프로세스 범위이지만, 안전한 운영 이벤트는 PostgreSQL과 `logs/service.log`에 함께 남아 재기동 뒤에도 확인할 수 있습니다. DB가 잠시 꺼져도 검색 요청은 멈추지 않고 파일 로그와 메모리 폴백으로 처리합니다. 설계의 Circuit Breaker·중복 요청 제어·심층 헬스체크를 모두 구현한 상태는 아닙니다.
 
 </details>
 
@@ -140,7 +140,7 @@ Streamlit 사용자 화면과 운영 대시보드가 FastAPI 백엔드에 연결
 
 **운영 상태에도 근거를 붙입니다.** 현재 세션 관측·서버 조회·GitHub 조회·관리표 기록을 구분하고, 아직 연결하지 않은 항목은 연결 대기로 표시합니다.
 
-검색·가드레일·재시도·Critic 판정·에이전트 오류는 `logs/service.log`에 구조화 JSON으로 기록합니다. 오류 수준 기록만 `logs/errors.log`에 따로 남기며, 채팅 원문·서비스 키·토큰·API 키·제공처 원문 응답은 로그에 저장하지 않습니다. 두 파일은 로컬·EC2 서버에 남고 Git에는 포함하지 않습니다.
+검색·가드레일·재시도·Critic 판정·에이전트 오류는 PostgreSQL `operation_events`와 `logs/service.log`에 동일한 안전 메타데이터로 기록합니다. 오류 수준 기록만 `logs/errors.log`에 따로 남기며, 채팅 원문·서비스 키·토큰·API 키·제공처 원문 응답은 어느 저장소에도 기록하지 않습니다. 운영 개요는 DB 이력과 파일 로그 이력을 분리해 표시하고, DB 연결 실패 시 파일 로그를 계속 사용합니다.
 
 <details>
 <summary><b>관리자 권한·연결 범위·자가 점검 기준</b></summary>
@@ -151,7 +151,7 @@ Streamlit 사용자 화면과 운영 대시보드가 FastAPI 백엔드에 연결
 | 하급 관리자 | 조회 | 가능 | 불가 | 불가 |
 | 상급 관리자 | 조회 | 가능 | 시험 환경에서 가능 | 가능 |
 
-서버 운영 패널은 프론트의 `CHARGEPIN_DASHBOARD_SERVER_OPS=true` 설정과 백엔드 API 연결이 필요합니다. 개발용 Compose는 이 설정을 켜며, 현재 운영용 Compose에는 해당 프론트 설정이 없어 서버 패널 연결은 별도 구성이 필요합니다. Watchdog 이력은 로그 연결 여부에 따라 표시합니다.
+서버 운영 패널은 프론트의 `CHARGEPIN_DASHBOARD_SERVER_OPS=true` 설정과 백엔드 API 연결이 필요합니다. 개발·운영 Compose 모두 이 설정을 켜며, 운영 개요에서 PostgreSQL 누적 이력과 파일 로그 이력을 함께 확인할 수 있습니다. Watchdog 이력은 로그 연결 여부에 따라 표시합니다.
 
 **컴플라이언스는 팀의 자가 점검입니다.** 18개 항목을 충족·구현·부분·미착수로 구분하고, 관측 근거가 생겼을 때 ‘구현’ 항목만 ‘충족’으로 올립니다. 관리표에는 과거 시점의 기록도 포함되므로 자동화 코드의 현재 상태와 구분해 읽어야 합니다.
 
@@ -254,6 +254,7 @@ Copy-Item .env.example .env
 | `KAKAO_JAVASCRIPT_KEY` | 브라우저 카카오 지도 표시 |
 | `OPENAI_API_KEY` | 문맥을 잇는 후속 검색과 자연어 해석. 미설정 시 규칙 기반 장소 검색만 사용 |
 | `OPENAI_PLANNER_MODEL` | Planner 모델. 기본값 `gpt-4o-mini` |
+| `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` | 운영 이력을 저장하는 Compose PostgreSQL 계정. 운영 환경에서는 강한 비밀번호 필수 |
 
 역할별 로그인 키는 서로 다르게 정합니다. 카카오 지도는 접속할 주소를 개발자 콘솔 Web 플랫폼에 등록해야 합니다. 로컬에서는 `http://localhost:8501`과 `http://127.0.0.1:8501`을 사용하는 주소에 맞게 등록합니다.
 
@@ -267,7 +268,7 @@ Copy-Item .env.example .env
 docker compose up --build
 ```
 
-첫 화면에서 설정한 역할의 서비스 키로 로그인합니다. 지도 키나 등록 도메인이 없으면 실제 지도를 표시할 수 없습니다. `/healthz`의 정상 응답은 백엔드 생존 확인이며 외부 API와 LLM의 정상 동작까지 증명하지 않습니다.
+첫 화면에서 설정한 역할의 서비스 키로 로그인합니다. Compose는 `postgres` 컨테이너도 함께 실행하며 첫 API 요청 시 `operation_events` 테이블을 자동 생성합니다. 지도 키나 등록 도메인이 없으면 실제 지도를 표시할 수 없습니다. `/healthz`의 정상 응답은 백엔드 생존 확인이며 외부 API와 LLM의 정상 동작까지 증명하지 않습니다.
 
 ---
 
@@ -275,11 +276,11 @@ docker compose up --build
 
 ## ✅ 동작을 확인하는 기준
 
-코드에 정의된 테스트는 총 **76개**입니다. 세 묶음과 별도의 Docker 헬스체크·롤백 통합검증이 이미지 빌드의 선행 조건입니다.
+코드에 정의된 테스트는 총 **85개**입니다. 세 묶음과 별도의 Docker 헬스체크·롤백 통합검증이 이미지 빌드의 선행 조건입니다.
 
 | Backend | Frontend | Operations | 합계 |
 |:---:|:---:|:---:|:---:|
-| **39** | **24** | **13** | **76** |
+| **48** | **24** | **13** | **85** |
 
 필수 장애시험의 현재 대상은 **외부 API 지연·Executor 예외·LLM 스키마 오류 각 3회, 총 9회**입니다. 실행 도구는 [run_fault_evidence.py](Backend/scripts/run_fault_evidence.py)이며, 활성화·상급 관리자 인증·결과 수집 절차는 [Test API·Test Checker 안내](docs/Fault_Test_Guide.md)를 따릅니다.
 

@@ -1,6 +1,21 @@
 name: chargepin-aws
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-chargepin}
+      POSTGRES_USER: ${POSTGRES_USER:-chargepin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required for production}
+    volumes:
+      - chargepin_postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
   backend:
     image: ghcr.io/ac9989/chargepin-backend:sha-${CHARGEPIN_DEPLOY_SHA:?Deploy SHA is required}
     env_file:
@@ -8,6 +23,12 @@ services:
     environment:
       CHARGEPIN_ENABLE_TEST_SCENARIOS: "false"
       CHARGEPIN_LOG_DIR: /app/logs
+      CHARGEPIN_DATABASE_ENABLED: "true"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-chargepin}
+      POSTGRES_USER: ${POSTGRES_USER:-chargepin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required for production}
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
@@ -29,6 +50,7 @@ services:
     environment:
       CHARGEPIN_API_BASE_URL: http://backend:8000/api/v1
       KAKAO_JAVASCRIPT_KEY: ${KAKAO_JAVASCRIPT_KEY:-}
+      CHARGEPIN_DASHBOARD_SERVER_OPS: "true"
     ports:
       - "127.0.0.1:8501:8501"
     depends_on:
@@ -45,3 +67,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
+
+volumes:
+  chargepin_postgres_data:

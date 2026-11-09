@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import os
+from time import perf_counter
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -26,6 +27,33 @@ authenticator = SessionAuthenticator()
 TEST_SCENARIOS_ENABLED = os.environ.get("CHARGEPIN_ENABLE_TEST_SCENARIOS", "true").casefold() == "true"
 
 
+@app.middleware("http")
+async def record_user_api_call(request: Request, call_next):
+    """Record only safe API metadata; request body and credentials are never read."""
+    started = perf_counter()
+    path = request.url.path
+    # Health probes and dashboard reads are not user work.  Avoid turning the
+    # dashboard's own polling into its headline metric.
+    recordable = request.method == "POST" and path.startswith("/api/v1/")
+    try:
+        response = await call_next(request)
+    except Exception:
+        if recordable:
+            orchestrator.memory.record_operation(
+                "api_request", "failed", method=request.method, path=path,
+                status_code=500, duration_ms=round((perf_counter() - started) * 1000),
+                error_category="unhandled_exception",
+            )
+        raise
+    if recordable:
+        orchestrator.memory.record_operation(
+            "api_request", "completed" if response.status_code < 400 else "failed",
+            method=request.method, path=path, status_code=response.status_code,
+            duration_ms=round((perf_counter() - started) * 1000),
+        )
+    return response
+
+
 def fault_injection_enabled() -> bool:
     """Keep fault injection unreachable unless the local/test switch is enabled."""
     return os.environ.get("CHARGEPIN_ENABLE_FAULT_INJECTION", "false").casefold() == "true"
@@ -33,7 +61,12 @@ def fault_injection_enabled() -> bool:
 
 @app.get("/healthz")
 def healthz() -> dict[str, str]:
-    return {"status": "ok", "service": "chargepin-backend"}
+    database = orchestrator.memory.event_store.snapshot()
+    return {
+        "status": "ok",
+        "service": "chargepin-backend",
+        "database": "available" if database["available"] else "unavailable",
+    }
 
 
 def require_session(authorization: str | None = Header(default=None)) -> AuthSession:
@@ -100,8 +133,9 @@ def get_search(request_id: str, _session: AuthSession = Depends(require_session)
 
 
 @app.get("/api/v1/ops/summary")
-def operations_summary(_session: AuthSession = Depends(require_operator)):
-    return orchestrator.operations_summary()
+def operations_summary(hours: int = Query(default=24, ge=1, le=168),
+                       _session: AuthSession = Depends(require_operator)):
+    return orchestrator.operations_summary(hours)
 
 
 @app.get("/api/v1/ops/platform")

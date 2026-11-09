@@ -3,7 +3,7 @@
 - 문서 버전: 1.2
 - 작성일: 2026-11-09
 - 구현 기준: FastAPI·Streamlit·Docker Compose·GitHub Actions `main`
-- 1.1 대비 반영: JSON 구조화 운영 로그, Compose 로그 볼륨, Discord CI/CD 실패 알림
+- 1.1 대비 반영: JSON 구조화 운영 로그, PostgreSQL 운영 이력, Compose 로그 볼륨, Discord CI/CD 실패 알림
 
 ## 1. 설계 목표와 경계
 
@@ -15,9 +15,9 @@ ChargePin은 카카오의 **서울 장소 후보**와 환경공단의 **충전�
 | 안전한 실패 | Critic이 지연·누락·이상값을 `SAFE_UNAVAILABLE`로 낮춰 확인되지 않은 상태를 단정하지 않는다. |
 | 빠른 기본 경로 | 명확한 장소·수치·타입은 규칙으로 처리하고, 문맥형 요청만 GPT-4o mini를 호출한다. |
 | 추적성 | `request_id`가 Handoff·재시도·Critic 판정·운영 이벤트를 연결한다. |
-| 안전한 영속 로그 | Handoff/세션은 메모리, 익명화된 운영 이벤트는 호스트 파일 로그로 분리한다. |
+| 안전한 영속 이력 | Handoff/세션은 메모리, 익명화된 운영 이벤트는 PostgreSQL과 호스트 파일 로그로 이중 저장한다. |
 
-Kubernetes, PostgreSQL, Redis는 사용하지 않는다. Handoff·세션·대시보드의 요청 집계는 백엔드 프로세스 범위이고, 재기동 후에도 확인해야 하는 안전한 운영 이벤트만 `logs` 볼륨에 보존한다.
+Kubernetes와 Redis는 사용하지 않는다. Handoff·세션·검색 결과는 백엔드 프로세스 범위이지만, 재기동 후에도 확인해야 하는 안전한 운영 이벤트는 Compose PostgreSQL과 `logs` 볼륨에 보존한다. DB 연결이 실패해도 검색은 중단하지 않고 파일 로그·메모리 폴백으로 처리한다.
 
 ## 2. 전체 구조
 
@@ -37,6 +37,7 @@ flowchart LR
     M -. request_id .- E
     M -. request_id .- C
     M --> L[(logs/service.log\nlogs/errors.log)]
+    M --> DB[(PostgreSQL\noperation_events)]
     E --> KAKAO[카카오 장소 API]
     UI --> MAP[카카오 지도 JavaScript SDK]
     E --> KECO[환경공단 충전소 API]
@@ -61,6 +62,7 @@ Orchestrator는 별도 에이전트가 아니라 FastAPI 내부 코드다. 순�
 | Critic | 최신성·수량·출처·상태 검증, PASS/SAFE_UNAVAILABLE 판정 | 제공처 재호출·결과 수정 금지 |
 | Memory Keeper | Handoff, 세션 문맥, 중간 결과, 재시도·감사 이벤트 관리 | 검색·품질 판정·외부 호출 금지 |
 | Structured Logger | Memory Keeper가 만든 안전한 이벤트를 JSONL로 append, 오류 파일 분리 | 채팅 원문·키·토큰·Provider 원문 응답 기록 금지 |
+| PostgreSQL Operation Store | JSONL과 같은 안전 이벤트를 `operation_events`에 누적, 대시보드 재기동 이력 제공 | 대화 원문·API 키·토큰·Provider 원문 응답 저장 금지, 연결 실패 시 검색 차단 금지 |
 | Operations Snapshot | 현재 프로세스 요청 집계, Compose health, Watchdog JSONL 조회 | Docker socket·시크릿·원문 메시지 노출 금지 |
 
 ## 4. 검색·에이전트 시퀀스
@@ -115,10 +117,11 @@ sequenceDiagram
 | 세션별 직전 확정 조건 | Memory Keeper 메모리 | Orchestrator | 초기화 |
 | Handoff 전이·감사·결과 요약·재시도·가드레일·오류 | `logs/service.log` | Structured Logger | 유지 |
 | 오류 수준 운영 이벤트 | `logs/errors.log` | Structured Logger | 유지 |
+| 안전한 운영 이벤트 | PostgreSQL `operation_events` | Memory Keeper / Operation Store | 유지 |
 
 로그 한 줄은 JSON 한 이벤트이며 `timestamp_utc`, `level`, `event_type`, `status`, 선택적 `request_id`와 안전한 메타데이터만 포함한다. 로그 모듈은 `raw_input`, `message`, `prompt`, `query`, `content`, `token`, `secret`, `password`, `authorization`, `service_key`, `api_key` 성격의 필드를 저장 전에 제거한다. 파일 I/O 실패는 검색 응답을 실패시키지 않는다.
 
-개발·운영 Compose는 `./logs:/app/logs` 볼륨을 마운트한다. 따라서 컨테이너 교체 후에도 호스트의 로그 파일이 유지되며, 로그 파일은 `.gitignore`로 저장소에 올리지 않는다.
+개발·운영 Compose는 PostgreSQL named volume과 `./logs:/app/logs` 볼륨을 사용한다. 따라서 컨테이너 교체 후에도 DB 이력과 호스트 로그 파일이 유지되며, 로그 파일과 `.env`는 `.gitignore`로 저장소에 올리지 않는다.
 
 ## 6. 오류·재시도·복구
 
@@ -172,9 +175,9 @@ flowchart LR
 
 | 그룹 | 현재 자동 검증 |
 | --- | --- |
-| Backend | Agent·Guardrail·SearchRequest·서울 범위·Test API·복구·Operations·구조화 로그 보안·bounded retry (46개) |
+| Backend | Agent·Guardrail·SearchRequest·서울 범위·Test API·복구·Operations·구조화 로그·DB 안전 저장·bounded retry (48개) |
 | Frontend | 채팅 안내·지도 안전성·역할 UI·대시보드 계약 (24개) |
 | Ops | Watchdog 정책·Docker 배포 실패/롤백 정책 (13개) |
 | 장애 주입 | timeout(FT-01), executor_exception(FT-02), llm_invalid_schema(FT-04)를 각 3회 실행해 9회 증빙. 세 시나리오 모두 자동 재시도 2회 뒤 안전한 종료를 확인 |
 
-범위 밖: Kubernetes, 영속 DB/Redis와 DB 연결 장애, 일반 주차장·빈자리 예측, 역할 승급·강등 화면, API 키·개인정보 로그 저장.
+범위 밖: Kubernetes, Redis와 DB 연결 오류의 반복 장애시험, 일반 주차장·빈자리 예측, 역할 승급·강등 화면, API 키·개인정보 로그 저장.

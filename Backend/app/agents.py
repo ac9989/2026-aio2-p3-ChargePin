@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 import os
 import re
 from time import perf_counter, sleep
@@ -17,6 +17,7 @@ from .models import (
     ConnectorType, PlaceCandidate, Point, SearchInput, SearchOrigin, SearchRequest,
     SearchResponse,
 )
+from .logging_setup import read_recent_operation_logs
 from .operations import compose_platform_snapshot, healing_snapshot
 from .providers import EnvironmentChargerAdapter, KakaoPlaceAdapter, ProviderError, kst_now
 from .store import MemoryKeeper
@@ -24,6 +25,19 @@ from .testkit import TestScenarioController
 
 
 GANGNAM_STATION = Point(lat=37.4980, lng=127.0270, source="initial_default")
+
+
+def _occurred_after(event: dict[str, Any], since: datetime) -> bool:
+    value = event.get("occurred_at") or event.get("timestamp_utc")
+    if not isinstance(value, str):
+        return False
+    try:
+        occurred_at = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if occurred_at.tzinfo is None:
+        occurred_at = occurred_at.replace(tzinfo=timezone.utc)
+    return occurred_at >= since
 
 
 @dataclass(frozen=True)
@@ -667,8 +681,12 @@ class SearchOrchestrator:
             actor_role=user_role,
         )
 
-    def operations_summary(self) -> dict[str, Any]:
-        events = list(self.memory.operation_events)
+    def operations_summary(self, hours: int = 24) -> dict[str, Any]:
+        """Return one consistent time window for DB, file logs, and server metrics."""
+        safe_hours = max(1, min(int(hours), 168))
+        since = datetime.now(timezone.utc) - timedelta(hours=safe_hours)
+        events, database = self.memory.persisted_events(500, since=since)
+        log_events = [event for event in read_recent_operation_logs(500) if _occurred_after(event, since)]
         search_events = [event for event in events if event.get("event_type") == "search"]
         quality_events = [event for event in search_events if int(event.get("quality_issue_count") or 0) > 0]
         guardrail_categories = {
@@ -682,13 +700,18 @@ class SearchOrchestrator:
             if category in guardrail_categories:
                 guardrail_categories[category] += 1
         guardrail_count = sum(
-            1 for handoff in self.memory.handoffs.values()
-            if "guardrail_blocked" in handoff.get("audit_events", [])
+            event.get("event_type") == "guardrail" and event.get("status") == "blocked"
+            for event in events
         )
-        retry_count = sum(len(handoff.get("retry_history", [])) for handoff in self.memory.handoffs.values())
+        retry_count = sum(event.get("event_type") == "retry_history" for event in events)
+        if not database["available"]:
+            # The file log has retry history, but the live in-memory event list
+            # intentionally contains only summary events.  Keep the existing
+            # process view accurate until PostgreSQL is reachable.
+            retry_count = sum(len(handoff.get("retry_history", [])) for handoff in self.memory.handoffs.values())
         provider_errors = [event for event in search_events if event.get("provider")]
         return {
-            "scope": "backend_process",
+            "scope": "postgresql" if database["available"] else "backend_process",
             "metrics": {
                 "search_count": len(search_events),
                 "completed_count": sum(event.get("status") == "completed" for event in search_events),
@@ -704,9 +727,24 @@ class SearchOrchestrator:
                 {"name": "Planner LLM", "status": "설정됨" if bool(self.planner._api_key) else "규칙 기반"},
                 {"name": "환경공단 캐시", "status": "사용 중", **self.executor.cache_snapshot()},
             ],
-            "recent_events": list(reversed(events[-20:])),
-            "recent_provider_errors": list(reversed(provider_errors[-10:])),
+            "recent_events": events[:20],
+            "recent_provider_errors": provider_errors[:10],
             "cache": self.executor.cache_snapshot(),
+            "persistence": {
+                "database": {
+                    **database,
+                    "event_count": len(events) if database["available"] else 0,
+                    "source": "PostgreSQL",
+                    "window_hours": safe_hours,
+                },
+                "logs": {
+                    "available": bool(log_events),
+                    "event_count": len(log_events),
+                    "source": "logs/service.log",
+                    "recent_events": log_events,
+                    "window_hours": safe_hours,
+                },
+            },
         }
 
     def compose_platform(self) -> dict[str, Any]:
