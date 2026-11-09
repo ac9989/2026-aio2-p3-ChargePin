@@ -20,8 +20,11 @@ TEST_SCENARIOS: Final = frozenset({
     "timeout",
     "executor_exception",
     "llm_invalid_schema",
+    "timeout_once",
+    "executor_exception_once",
+    "llm_invalid_schema_once",
 })
-_EXECUTOR_SCENARIOS: Final = frozenset(TEST_SCENARIOS - {"llm_invalid_schema"})
+_EXECUTOR_SCENARIOS: Final = frozenset(TEST_SCENARIOS - {"llm_invalid_schema", "llm_invalid_schema_once"})
 
 
 class TestScenarioController:
@@ -33,6 +36,7 @@ class TestScenarioController:
 
     def __init__(self) -> None:
         self._active: str | None = None
+        self._consumed = False
         self._lock = Lock()
 
     def active(self) -> str | None:
@@ -44,18 +48,26 @@ class TestScenarioController:
             return False
         with self._lock:
             self._active = scenario
+            self._consumed = False
         return True
 
     def clear(self) -> None:
         with self._lock:
             self._active = None
+            self._consumed = False
 
     def executor_scenario(self) -> str | None:
         scenario = self.active()
         return scenario if scenario in _EXECUTOR_SCENARIOS else None
 
     def has_invalid_llm_schema(self) -> bool:
-        return self.active() == "llm_invalid_schema"
+        with self._lock:
+            if self._active == "llm_invalid_schema":
+                return True
+            if self._active == "llm_invalid_schema_once" and not self._consumed:
+                self._consumed = True
+                return True
+            return False
 
     @staticmethod
     def invalid_llm_payload() -> dict[str, str]:
@@ -64,12 +76,18 @@ class TestScenarioController:
 
     def execute_fixture(self, request: SearchRequest) -> list[ChargerResult] | None:
         """Return a safe fixture or raise the exact fault selected for a test."""
-        scenario = self.executor_scenario()
-        if scenario is None:
-            return None
-        if scenario == "timeout":
+        with self._lock:
+            scenario = self._active
+            if scenario in {"timeout_once", "executor_exception_once"}:
+                if self._consumed:
+                    scenario = "normal"
+                else:
+                    self._consumed = True
+            if scenario not in _EXECUTOR_SCENARIOS:
+                return None
+        if scenario in {"timeout", "timeout_once"}:
             raise ProviderError("KECO", "환경공단 응답이 지연되고 있습니다.", retryable=True)
-        if scenario == "executor_exception":
+        if scenario in {"executor_exception", "executor_exception_once"}:
             raise RuntimeError("test executor exception")
 
         now = kst_now()
