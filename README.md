@@ -106,7 +106,7 @@ Streamlit 사용자 화면과 운영 대시보드가 FastAPI 백엔드에 연결
 
 백엔드에 `/search/{request_id}/confirm` 단계가 있지만 **현재 챗 UI는 이를 자동 호출합니다.** 별도 사용자 확인이나 챗 후보 선택 화면은 현재 제공하지 않으며, 장소 후보 조회는 확인 단계 이전에 수행합니다.
 
-계획·실행·검증은 `request_id`로 연결합니다. 메모리와 서버 운영 집계는 현재 백엔드 프로세스 범위이며, 설계의 Circuit Breaker·중복 요청 제어·심층 헬스체크를 모두 구현한 상태는 아닙니다.
+계획·실행·검증은 `request_id`로 연결합니다. Handoff와 채팅 문맥은 현재 백엔드 프로세스 범위이지만, 안전한 운영 이벤트는 `logs/service.log`에 JSON 한 줄 단위로 남아 재기동 뒤에도 확인할 수 있습니다. 설계의 Circuit Breaker·중복 요청 제어·심층 헬스체크를 모두 구현한 상태는 아닙니다.
 
 </details>
 
@@ -139,6 +139,8 @@ Streamlit 사용자 화면과 운영 대시보드가 FastAPI 백엔드에 연결
 <p align="center"><img src="Frontend/docs/images/dashboard.png" alt="관리자 대시보드의 여섯 메뉴와 근거를 구분하는 자가 점검 구성도" width="100%"></p>
 
 **운영 상태에도 근거를 붙입니다.** 현재 세션 관측·서버 조회·GitHub 조회·관리표 기록을 구분하고, 아직 연결하지 않은 항목은 연결 대기로 표시합니다.
+
+검색·가드레일·재시도·Critic 판정·에이전트 오류는 `logs/service.log`에 구조화 JSON으로 기록합니다. 오류 수준 기록만 `logs/errors.log`에 따로 남기며, 채팅 원문·서비스 키·토큰·API 키·제공처 원문 응답은 로그에 저장하지 않습니다. 두 파일은 로컬·EC2 서버에 남고 Git에는 포함하지 않습니다.
 
 <details>
 <summary><b>관리자 권한·연결 범위·자가 점검 기준</b></summary>
