@@ -59,6 +59,8 @@ jobs:
         run: python -m pip install pytest==8.3.5
       - name: Run watcher unit tests
         run: python -m pytest -q tests/ops
+      - name: Test real Docker healthcheck rollback in isolated containers
+        run: bash tests/ops/run_rollback_integration.sh
 
   docker-build:
     name: Validate Compose and build images

@@ -1,0 +1,44 @@
+name: chargepin-aws
+
+services:
+  backend:
+    image: ghcr.io/ac9989/chargepin-backend:sha-${CHARGEPIN_DEPLOY_SHA:?Deploy SHA is required}
+    env_file:
+      - .env
+    environment:
+      CHARGEPIN_ENABLE_TEST_SCENARIOS: "false"
+    ports:
+      - "127.0.0.1:8000:8000"
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  frontend:
+    image: ghcr.io/ac9989/chargepin-frontend:sha-${CHARGEPIN_DEPLOY_SHA:?Deploy SHA is required}
+    environment:
+      CHARGEPIN_API_BASE_URL: http://backend:8000/api/v1
+      KAKAO_JAVASCRIPT_KEY: ${KAKAO_JAVASCRIPT_KEY:-}
+    ports:
+      - "127.0.0.1:8501:8501"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=3)"
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
