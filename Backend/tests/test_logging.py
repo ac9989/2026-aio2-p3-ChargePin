@@ -44,8 +44,5 @@ class StructuredLoggingTests(unittest.TestCase):
         self.assertNotIn("service_key", service_log)
 
 
-def test_discord_notification_demo(self) -> None:
-    self.assertEqual(1, 2, "Discord alert verification")
-
 if __name__ == "__main__":
     unittest.main()
