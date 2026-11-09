@@ -349,7 +349,7 @@ def operations_action_panel(api: Any, server: dict[str, Any] | None) -> None:
         if server is None:
             st.info("운영 API 연결을 확인하는 중입니다.")
             return
-        token = st.session_state.get("access_token")
+        token = st.session_state.get("auth_token")
         if not isinstance(token, str) or not token:
             st.warning("운영 세션을 다시 확인해 주세요.")
             return

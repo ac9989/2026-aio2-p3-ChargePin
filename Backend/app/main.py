@@ -122,6 +122,8 @@ def confirm_search(request_id: str, body: ConfirmInput, session: AuthSession = D
         return orchestrator.confirm_chat(request_id, body, session.role, session.session_ref)
     except KeyError as error:
         raise HTTPException(status_code=404, detail="확인 대기 중인 요청을 찾지 못했습니다.") from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
 
 
 @app.get("/api/v1/search/{request_id}")
