@@ -50,6 +50,8 @@ jobs:
           python-version: '3.12'
       - name: Run watcher unit tests
         run: python -m unittest discover -s tests/ops -v
+      - name: Test real Docker healthcheck rollback in isolated containers
+        run: bash tests/ops/run_rollback_integration.sh
 
   docker-build:
     name: Validate Compose and build images
