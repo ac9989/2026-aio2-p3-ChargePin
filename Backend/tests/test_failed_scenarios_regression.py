@@ -7,7 +7,7 @@ from __future__ import annotations
 import unittest
 
 from app.agents import InputGuardrail, LlmPlannerExtraction, Planner, SearchOrchestrator
-from app.models import ConnectorType, PlaceCandidate, Point
+from app.models import ConfirmInput, ConnectorType, PlaceCandidate, Point
 
 
 class FailedScenarioRegressionTests(unittest.TestCase):
@@ -57,6 +57,52 @@ class FailedScenarioRegressionTests(unittest.TestCase):
         self.assertEqual(draft.search_request.radius_km, 1.0)
         self.assertEqual(queries, ["강남역"])
         self.assertEqual(draft.search_request.center.lat, 37.498)
+
+    def test_llm05_explicit_second_candidate_changes_search_location(self):
+        orchestrator = SearchOrchestrator()
+        stations = [
+            PlaceCandidate(candidate_id="one", name="첫 번째 장소", category="역",
+                           address="서울특별시 강남구 역삼동", location=Point(lat=37.498, lng=127.027),
+                           district_code="11680"),
+            PlaceCandidate(candidate_id="two", name="두 번째 장소", category="역",
+                           address="서울특별시 중구 세종대로", location=Point(lat=37.5665, lng=126.978),
+                           district_code="11140"),
+        ]
+        orchestrator.executor._places.top_two = lambda _query: stations
+        seen = []
+        orchestrator.executor._chargers.nearby = lambda request: seen.append(request) or []
+        plan = orchestrator.plan_chat("사당역 주변 충전소", "GUEST", "select-session")
+        self.assertEqual(plan.status, "AWAITING_CONFIRMATION")
+        self.assertEqual(len(plan.candidates), 2)
+        self.assertEqual(seen, [], "No KECO lookup before user confirms")
+        response = orchestrator.confirm_chat(
+            plan.request_id, ConfirmInput(confirmed=True, candidate_id="two"),
+            "GUEST", "select-session"
+        )
+        self.assertEqual(len(seen), 1)
+        self.assertAlmostEqual(response.applied_request.center.lat, 37.5665)
+        self.assertAlmostEqual(response.applied_request.center.lng, 126.978)
+        self.assertEqual(response.applied_request.region_filters, ["zscode:11140"])
+        self.assertTrue(response.applied_request.user_confirmed)
+        self.assertEqual(orchestrator.memory.get_chat_context("select-session")["location_text"],
+                         "두 번째 장소")
+
+    def test_llm05_unknown_candidate_is_rejected_before_charger_lookup(self):
+        orchestrator = SearchOrchestrator()
+        orchestrator.executor._places.top_two = lambda _query: [
+            PlaceCandidate(candidate_id="one", name="첫 번째 장소", category="역",
+                           address="서울특별시 강남구 역삼동", location=Point(lat=37.498, lng=127.027),
+                           district_code="11680"),
+        ]
+        called = []
+        orchestrator.executor._chargers.nearby = lambda request: called.append(request) or []
+        plan = orchestrator.plan_chat("사당역", "GUEST", "select-session")
+        with self.assertRaises(ValueError):
+            orchestrator.confirm_chat(
+                plan.request_id, ConfirmInput(confirmed=True, candidate_id="wrong"),
+                "GUEST", "select-session"
+            )
+        self.assertEqual(called, [])
 
 
 if __name__ == "__main__":
