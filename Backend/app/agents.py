@@ -83,7 +83,7 @@ class InputGuardrail:
         )),
         ("PRIVILEGE_CHANGE", re.compile(
             r"(?:(?:권한|등급|역할|관리자|admin).{0,14}(?:변경|수정|바꾸|바꿈|조정|조작|전환|설정|"
-            r"승급|강등|올리|내리|부여|삭제|해줘|만들어|되게)|(?:나를|내).{0,14}"
+            r"승급|강등|올리|내리|부여|삭제|해줘|만들어|되게|바꿔|줘)|(?:나를|내).{0,14}"
             r"(?:상급|하급)?(?:관리자|admin).{0,12}(?:해줘|만들어|되게)|"
             r"(?:role|privilege|permission|admin).{0,14}(?:change|modify|update|switch|grant|promote|demote|delete)|"
             r"(?:make|set).{0,14}(?:admin|role|privilege|permission))"
@@ -179,7 +179,7 @@ Rules:
         """
         value = cls._location_query(message)
         value = re.sub(
-            r"(?:그|여기|현재|이전|방금|만|로|으로|바꿔|변경|다시|그대로|"
+            r"(?:그|여기|현재|이전|방금|만|로|으로|바꿔|변경|다시|그대로|정도|쯤|"
             r"조건|설정|범위|거리|에서|에|해|줘|주세요)",
             " ",
             value,
