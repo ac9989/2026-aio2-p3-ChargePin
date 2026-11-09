@@ -127,14 +127,15 @@ docker compose up --build
 ## 테스트
 
 ```powershell
-cd Backend;  py -m unittest discover -s tests -v
-cd Frontend; py -m unittest tests.test_dashboard_data tests.test_chat_guidance -v
+cd Backend;  py -m pytest -q
+cd Frontend; py -m pytest -q
+cd ..;      py -m pytest -q tests/ops
 ```
 
 ## 다음 단계
 
 - 증빙 채우기: 필수 장애시험 12회, CI 실패 차단 실증, 실패 알림 수신
-- 운영 확장: Kubernetes 매니페스트(Pod · Service · Secret), EC2 자동 배포와 롤백, 서버 범위 지표
+- 운영 확장: Docker Compose Health Check·Watchdog 로그 연동, EC2 자동 배포와 이미지 기반 롤백, 서버 범위 지표
 - 생활에 더 가까운 말: ‘밤에도 여는 곳’, ‘주차 무료인 곳’처럼 이미 받아 오는 이용 시간 · 주차 정보까지 조건으로
 
 ---

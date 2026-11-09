@@ -36,23 +36,9 @@ def can_view_dashboard(role: str | None) -> bool:
     return role in ("하급 관리자", "상급 관리자")
 
 
-def can_manage_roles(role: str | None) -> bool:
-    return role == "상급 관리자"
-
-
 def can_export_report(role: str | None) -> bool:
-    """Compliance report export follows the same boundary as role management."""
+    """The export is a read-only report available to the senior administrator."""
     return role == "상급 관리자"
-
-
-def allowed_demo_role_transitions(actor: str | None, current_role: str, *, is_self: bool = False) -> list[str]:
-    """Return only PRD-permitted transitions for explicitly fictional demo targets."""
-    if not can_manage_roles(actor) or is_self:
-        return []
-    return {
-        "일반 이용자": ["하급 관리자", "상급 관리자"],
-        "하급 관리자": ["일반 이용자"],
-    }.get(current_role, [])
 
 
 def event_kind(path: str) -> str | None:
@@ -221,7 +207,7 @@ def evaluate_compliance(reference: dict[str, Any], live: dict[str, Any]) -> list
         "critic_session": _safe_count(live.get("output_checked")) > 0,
         "trace_session": _safe_count(live.get("traced_count")) > 0,
         "ci_tests": live.get("ci_tests") == "성공",
-        "k8s_ready": live.get("k8s_ready") is True,
+        "compose_ready": live.get("compose_ready") is True,
         "healing": _safe_count((live.get("healing") or {}).get("recovered")) > 0,
     }
     notes = {
@@ -230,7 +216,7 @@ def evaluate_compliance(reference: dict[str, Any], live: dict[str, Any]) -> list
         "critic_session": f'현재 세션 Critic 판정 {_safe_count(live.get("output_checked"))}건 관측',
         "trace_session": f'현재 세션 요청 ID {_safe_count(live.get("traced_count"))}건 추적',
         "ci_tests": "최근 CI 테스트 작업 성공 (GitHub Actions)",
-        "k8s_ready": "클러스터 워크로드 전체 준비 완료 (서버 보고)",
+        "compose_ready": "Docker Compose 서비스 전체 준비 완료 (서버 보고)",
         "healing": "힐링 이벤트 복구 {0}건 / 재시작 {1}건 (서버 보고)".format(
             _safe_count((live.get("healing") or {}).get("recovered")),
             _safe_count((live.get("healing") or {}).get("attempts"))),

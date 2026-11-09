@@ -11,6 +11,7 @@ from .agents import SearchOrchestrator
 from .auth import AuthSession, SessionAuthenticator
 from .models import AuthLoginInput, AuthLoginResponse, ChatPlanInput, ConfirmInput, PlaceCandidate, PlaceSuggestInput, SearchInput
 from .providers import ProviderError
+from .testkit import TEST_SCENARIOS
 
 app = FastAPI(title="ChargePin API", version="1.0.0-preview")
 app.add_middleware(
@@ -25,6 +26,11 @@ authenticator = SessionAuthenticator()
 TEST_SCENARIOS_ENABLED = os.environ.get("CHARGEPIN_ENABLE_TEST_SCENARIOS", "true").casefold() == "true"
 
 
+def fault_injection_enabled() -> bool:
+    """Keep fault injection unreachable unless the local/test switch is enabled."""
+    return os.environ.get("CHARGEPIN_ENABLE_FAULT_INJECTION", "false").casefold() == "true"
+
+
 @app.get("/healthz")
 def healthz() -> dict[str, str]:
     return {"status": "ok", "service": "chargepin-backend"}
@@ -37,6 +43,14 @@ def require_session(authorization: str | None = Header(default=None)) -> AuthSes
 def require_operator(session: AuthSession = Depends(require_session)) -> AuthSession:
     if session.role not in {"JUNIOR_ADMIN", "SENIOR_ADMIN"}:
         raise HTTPException(status_code=403, detail="관리자 전용 기능입니다.")
+    return session
+
+
+def require_test_operator(session: AuthSession = Depends(require_operator)) -> AuthSession:
+    if not fault_injection_enabled():
+        raise HTTPException(status_code=404, detail="테스트 장애 주입 기능은 이 환경에서 비활성화되어 있습니다.")
+    if session.role != "SENIOR_ADMIN":
+        raise HTTPException(status_code=403, detail="테스트 장애 주입은 상급 관리자 전용입니다.")
     return session
 
 
@@ -90,6 +104,16 @@ def operations_summary(_session: AuthSession = Depends(require_operator)):
     return orchestrator.operations_summary()
 
 
+@app.get("/api/v1/ops/platform")
+def compose_platform(_session: AuthSession = Depends(require_operator)):
+    return orchestrator.compose_platform()
+
+
+@app.get("/api/v1/ops/healing")
+def healing_status(_session: AuthSession = Depends(require_operator)):
+    return orchestrator.healing_status()
+
+
 @app.post("/api/v1/ops/requests/{request_id}/retry")
 def retry_request(request_id: str, session: AuthSession = Depends(require_operator)):
     try:
@@ -103,6 +127,26 @@ def retry_request(request_id: str, session: AuthSession = Depends(require_operat
 @app.post("/api/v1/ops/cache/refresh")
 def refresh_cache(session: AuthSession = Depends(require_operator)):
     return orchestrator.refresh_provider_cache(session.role)
+
+
+@app.get("/api/v1/test/faults")
+def current_test_fault(_session: AuthSession = Depends(require_test_operator)):
+    return {"test_only": True, "active": orchestrator.test_scenarios.active(), "scenarios": sorted(TEST_SCENARIOS)}
+
+
+@app.post("/api/v1/test/faults/reset")
+def reset_test_fault(session: AuthSession = Depends(require_test_operator)):
+    orchestrator.test_scenarios.clear()
+    orchestrator.memory.record_operation("test_api", "reset", actor_role=session.role)
+    return {"test_only": True, "active": None}
+
+
+@app.post("/api/v1/test/faults/{scenario}")
+def activate_test_fault(scenario: str, session: AuthSession = Depends(require_test_operator)):
+    if not orchestrator.test_scenarios.activate(scenario):
+        raise HTTPException(status_code=422, detail="지원하지 않는 테스트 시나리오입니다.")
+    orchestrator.memory.record_operation("test_api", "activated", scenario=scenario, actor_role=session.role)
+    return {"test_only": True, "active": scenario}
 
 
 _BOOM_SCENARIOS = {

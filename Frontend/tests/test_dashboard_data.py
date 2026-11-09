@@ -5,8 +5,8 @@ import unittest
 from unittest.mock import patch
 from api_client import ChargePinApi
 
-from dashboard_data import (action_items, allowed_demo_role_transitions, can_export_report, can_manage_roles,
-                            can_view_dashboard, compliance_score, error_class, evaluate_compliance, event_kind,
+from dashboard_data import (action_items, can_export_report, can_view_dashboard, compliance_score, error_class,
+                            evaluate_compliance, event_kind,
                             guardrail_summary, health_label, load_compliance_reference, summarize_events)
 from map_view import build_map_html
 
@@ -15,19 +15,10 @@ class RoleTests(unittest.TestCase):
     def test_role_access_is_explicit_and_unknown_roles_are_rejected(self):
         for role in ("일반 이용자", "손님", None, "알 수 없는 역할"):
             self.assertFalse(can_view_dashboard(role))
-            self.assertFalse(can_manage_roles(role))
         self.assertTrue(can_view_dashboard("하급 관리자"))
-        self.assertFalse(can_manage_roles("하급 관리자"))
         self.assertTrue(can_view_dashboard("상급 관리자"))
-        self.assertTrue(can_manage_roles("상급 관리자"))
-
-    def test_demo_transitions_enforce_prd_and_cannot_change_self(self):
-        self.assertEqual(allowed_demo_role_transitions("상급 관리자", "일반 이용자"),
-                         ["하급 관리자", "상급 관리자"])
-        self.assertEqual(allowed_demo_role_transitions("상급 관리자", "하급 관리자"), ["일반 이용자"])
-        self.assertEqual(allowed_demo_role_transitions("상급 관리자", "상급 관리자"), [])
-        self.assertEqual(allowed_demo_role_transitions("상급 관리자", "하급 관리자", is_self=True), [])
-        self.assertEqual(allowed_demo_role_transitions("하급 관리자", "일반 이용자"), [])
+        self.assertFalse(can_export_report("하급 관리자"))
+        self.assertTrue(can_export_report("상급 관리자"))
 
 
 class DashboardDataTests(unittest.TestCase):
@@ -82,6 +73,17 @@ class RequestTelemetryTests(unittest.TestCase):
         with patch.object(api, "_perform_request", return_value={"request_id": "<script>"}):
             api._request("POST", "/chat/plan", access_token="secret")
         self.assertNotIn("request_id", events[0])
+
+    def test_operation_actions_send_only_the_admin_token(self):
+        events = []
+        api = ChargePinApi(observer=events.append)
+        with patch.object(api, "_perform_request", return_value={"status": "completed"}):
+            api.retry_request("req-123", "private-token")
+            api.refresh_cache("private-token")
+        self.assertEqual([event["path"] for event in events], [
+            "/ops/requests/req-123/retry", "/ops/cache/refresh",
+        ])
+        self.assertNotIn("private-token", str(events))
 
 
 class MapViewTests(unittest.TestCase):

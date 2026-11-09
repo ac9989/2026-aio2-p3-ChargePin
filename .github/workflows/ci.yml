@@ -27,7 +27,7 @@ jobs:
         run: python -m pip install -r Backend/requirements.txt
       - name: Run backend tests
         working-directory: Backend
-        run: python -m unittest discover -s tests -v
+        run: python -m pytest -q
 
   frontend-syntax:
     name: Frontend syntax check
@@ -37,8 +37,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: pip
+          cache-dependency-path: Frontend/requirements.txt
+      - name: Install frontend test dependencies
+        run: python -m pip install -r Frontend/requirements.txt
       - name: Check frontend Python syntax
         run: python -m compileall -q Frontend
+      - name: Run frontend tests
+        working-directory: Frontend
+        run: python -m pytest -q
 
   autohealing-tests:
     name: Existing Auto Healing policy tests
@@ -48,8 +55,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Install test runner
+        run: python -m pip install pytest==8.3.5
       - name: Run watcher unit tests
-        run: python -m unittest discover -s tests/ops -v
+        run: python -m pytest -q tests/ops
 
   docker-build:
     name: Validate Compose and build images

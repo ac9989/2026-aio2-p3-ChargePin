@@ -50,13 +50,15 @@ class MemoryKeeper:
         self.operation_events.append(event)
         self.operation_events = self.operation_events[-200:]
 
-    def add_retry(self, request_id: str, reason: str) -> int:
+    def add_retry(self, request_id: str, reason: str, *, kind: str = "manual") -> int:
+        """Record a bounded retry without retaining provider payloads or user text."""
         history = self.handoffs.setdefault(request_id, {}).setdefault("retry_history", [])
         attempt = len(history) + 1
         history.append({
             "attempt": attempt,
             "occurred_at": datetime.now(timezone.utc).isoformat(),
+            "kind": kind,
             "reason": reason,
         })
-        self.record_audit(request_id, "manual_retry_requested")
+        self.record_audit(request_id, f"{kind}_retry_requested")
         return attempt

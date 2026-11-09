@@ -134,3 +134,11 @@ class ChargePinApi:
 
     def ops_healing(self, access_token: str) -> dict[str, Any]:
         return self._request("GET", "/ops/healing", access_token=access_token, timeout=5)
+
+    def retry_request(self, request_id: str, access_token: str) -> dict[str, Any]:
+        """Re-run one previously degraded request; the backend enforces the retry limit."""
+        return self._request("POST", f"/ops/requests/{request_id}/retry", access_token=access_token, timeout=45)
+
+    def refresh_cache(self, access_token: str) -> dict[str, Any]:
+        """Clear provider cache through the administrator-only backend endpoint."""
+        return self._request("POST", "/ops/cache/refresh", access_token=access_token, timeout=10)

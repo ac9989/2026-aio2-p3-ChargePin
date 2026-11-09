@@ -18,7 +18,7 @@ from api_client import ApiError
 from ops_contract import (CODE_HEALING_POLICY, EXPECTED_RESOURCES, healing_stats, normalize_healing,
                           normalize_platform, platform_ready)
 from dashboard_data import (
-    AVAILABILITY_LABELS, KST, PLAN_STATUS_LABELS, action_items, can_export_report, can_manage_roles,
+    AVAILABILITY_LABELS, KST, PLAN_STATUS_LABELS, action_items, can_export_report,
     compliance_rows, compliance_score, display_time, evaluate_compliance, event_time, guardrail_summary,
     health_label, load_compliance_reference, summarize_events,
 )
@@ -339,8 +339,61 @@ def pipeline_status(runs: list[dict[str, Any]]) -> dict[str, Any]:
 
 # ---------------------------------------------------------------- views
 
+def operations_action_panel(api: Any, server: dict[str, Any] | None) -> None:
+    """Run only administrator-authorized, auditable operation endpoints."""
+    with st.container(border=True, key="overview_operation_actions"):
+        section_title("운영 작업", "실패 요청 재처리 · 제공자 캐시 갱신")
+        notice = st.session_state.pop("operation_notice", None)
+        if isinstance(notice, str):
+            st.success(notice)
+        if server is None:
+            st.info("운영 API 연결을 확인하는 중입니다.")
+            return
+        token = st.session_state.get("access_token")
+        if not isinstance(token, str) or not token:
+            st.warning("운영 세션을 다시 확인해 주세요.")
+            return
+
+        candidates = []
+        for event in server.get("recent_events", []):
+            if not isinstance(event, dict) or event.get("event_type") != "search" or event.get("status") != "degraded":
+                continue
+            request_id = event.get("request_id")
+            if isinstance(request_id, str) and 0 < len(request_id) <= 80 and request_id.isascii():
+                candidates.append(request_id)
+        candidates = list(dict.fromkeys(candidates))
+        left, right = st.columns(2, gap="medium")
+        with left:
+            if candidates:
+                request_id = st.selectbox("재처리할 불완전 검색 요청", candidates, key="operation_retry_request")
+                if st.button("선택 요청 재처리", icon=":material/replay:", use_container_width=True,
+                             key="operation_retry"):
+                    try:
+                        result = api.retry_request(request_id, token)
+                    except ApiError as error:
+                        st.error(error.message)
+                    else:
+                        st.session_state.operation_notice = (
+                            f"요청을 재처리했습니다. 결과 상태: {result.get('status', '확인 필요')}"
+                        )
+                        st.rerun()
+            else:
+                st.caption("현재 세션에 재처리 가능한 불완전 검색 요청이 없습니다.")
+        with right:
+            st.caption("카카오 장소 후보와 환경공단 충전기 캐시를 비웁니다. 다음 검색에서 새로 조회합니다.")
+            if st.button("캐시 갱신", icon=":material/refresh:", use_container_width=True, key="operation_cache_refresh"):
+                try:
+                    api.refresh_cache(token)
+                except ApiError as error:
+                    st.error(error.message)
+                else:
+                    st.session_state.operation_notice = "제공자 캐시를 갱신했습니다."
+                    st.rerun()
+
+
 def overview_view(data: dict[str, Any], guard: dict[str, Any], health: str,
-                  providers: list[tuple[str, str]], items: list[dict[str, Any]], pipeline: dict[str, Any]) -> None:
+                  providers: list[tuple[str, str]], items: list[dict[str, Any]], pipeline: dict[str, Any],
+                  api: Any, server: dict[str, Any] | None) -> None:
     score = compliance_score(items)
     rate = "—" if data["server_error_rate"] is None else f'{data["server_error_rate"]:.1f}%'
     metric_row("overview_metrics", [
@@ -382,6 +435,7 @@ def overview_view(data: dict[str, Any], guard: dict[str, Any], health: str,
                     ("EC2 배포", "수동 · 관리표 기록"),
                 ])
                 st.link_button("GitHub Actions 실행 보기", (run or {}).get("html_url") or ACTIONS_URL, width="stretch")
+    operations_action_panel(api, server)
 
 
 def agent_view(data: dict[str, Any], guard: dict[str, Any]) -> None:
@@ -545,7 +599,7 @@ def reliability_view(data: dict[str, Any], guard: dict[str, Any], health: str,
     with st.container(border=True, key="healing_layers"):
         section_title("힐링 계층", "가장 가벼운 조치부터, 넘치면 다음 계층으로")
         policy_table([
-            {"계층": "L1 재시작", "동작": "Watchdog 컨테이너 재시작 · Kubernetes 생존 프로브",
+            {"계층": "L1 재시작", "동작": "Docker Compose Health Check · Watchdog 컨테이너 재시작",
              "트리거": "헬스 체크 연속 실패",
              "현재 근거": (f'재시작 {stats["attempts"]} · 복구 {stats["recovered"]} (서버 이벤트)' if healing
                        else f'{trial.get("status", "확인 필요")} · {trial.get("detail", "")}'),
@@ -588,17 +642,17 @@ def reliability_view(data: dict[str, Any], guard: dict[str, Any], health: str,
         ])
 
 
-def manifest_panel(platform: dict[str, Any] | None) -> None:
-    with st.container(border=True, key="pipeline_manifest"):
+def compose_platform_panel(platform: dict[str, Any] | None) -> None:
+    with st.container(border=True, key="pipeline_compose_platform"):
         if platform is None:
-            section_title("Kubernetes 매니페스트", "서버 연결 대기 · GET /api/v1/ops/platform")
+            section_title("Docker Compose 서비스 상태", "서버 연결 대기 · GET /api/v1/ops/platform")
             policy_table([{"종류": kind, "이름": name, "역할": role, "상태": "연결 대기"}
                           for kind, name, role in EXPECTED_RESOURCES])
-            st.caption("백엔드가 클러스터 상태를 보내면 목표 · 준비 레플리카, 재시작 횟수, 이미지 태그, 프로브가 이 표에 표시됩니다. Secret은 키 개수만 표시합니다.")
+            st.caption("백엔드가 Compose 서비스 상태를 보내면 준비 상태, 이미지 태그, Health Check와 운영 설정 수가 표시됩니다. 비밀값은 표시하지 않습니다.")
             return
         when = display_time(platform["observed_at"].astimezone(KST), full=True) if platform["observed_at"] else "시각 확인 필요"
-        section_title("Kubernetes 매니페스트" if platform["source"] == "kubernetes" else "배포 리소스 (Compose)",
-                      f'{platform["namespace"] or "namespace 확인 필요"} · {when}')
+        section_title("Docker Compose 서비스 상태",
+                      f'{platform["namespace"] or "Compose 프로젝트 확인 필요"} · {when}')
         def num(value: Any) -> str:
             return "—" if value is None else str(value)
         rows = []
@@ -641,7 +695,7 @@ def pipeline_view(reference: dict[str, Any], pipeline: dict[str, Any], runs: lis
             ("운영 확인", "수동", "헬스 확인 · 자동화 예정"),
         ])
         st.caption("Plan · Code는 저장소 브랜치, Build · Test · Release는 GitHub Actions 자동, Deploy · Operate는 현재 수동입니다.")
-    manifest_panel(platform)
+    compose_platform_panel(platform)
     with st.container(key="pipeline_details"):
         left, right = st.columns([1.2, 1], gap="medium")
         with left:
@@ -708,30 +762,6 @@ def compliance_view(reference: dict[str, Any], items: list[dict[str, Any]]) -> N
 
 # ---------------------------------------------------------------- dialogs and shell
 
-@st.dialog("상급 관리자 전용 기능입니다")
-def senior_only_dialog() -> None:
-    st.write("권한 정보는 상급 관리자만 확인할 수 있습니다.")
-
-
-@st.dialog("권한 관리")
-def role_management_dialog() -> None:
-    st.markdown(
-        '<div class="cp-role-list">'
-        '<div class="cp-role-item"><span class="cp-role-symbol">01</span><div><strong>일반 이용자</strong><p>충전소 탐색 · AI 챗</p></div></div>'
-        '<div class="cp-role-item"><span class="cp-role-symbol">02</span><div><strong>하급 관리자</strong><p>운영 대시보드 전체 조회</p></div></div>'
-        '<div class="cp-role-item"><span class="cp-role-symbol">03</span><div><strong>상급 관리자</strong><p>조회 · 권한 안내 · 컴플라이언스 리포트 내보내기</p></div></div>'
-        '</div><div class="cp-role-note">운영 기능은 백엔드 연결 상태에 따라 사용할 수 있습니다.</div>',
-        unsafe_allow_html=True)
-
-
-def management_menu() -> None:
-    if st.button("권한 관리", icon=":material/admin_panel_settings:", key="menu_roles", help="권한 관리"):
-        if can_manage_roles(st.session_state.get("role")):
-            role_management_dialog()
-        else:
-            senior_only_dialog()
-
-
 def render_operations_dashboard(api: Any, header: Callable[..., str | None],
                                 providers: Callable[[], list[tuple[str, str]]],
                                 reference_loader: Callable[[], dict[str, Any]],
@@ -787,7 +817,7 @@ def render_operations_dashboard(api: Any, header: Callable[..., str | None],
         except (ApiError, requests.RequestException, ValueError):
             return None
 
-    server = load(server_summary_loader) if menu in ("가드레일", "안정성·힐링") else None
+    server = load(server_summary_loader) if menu in ("운영 개요", "가드레일", "안정성·힐링") else None
     platform = normalize_platform(load(platform_loader)) if menu in ("배포 파이프라인", "컴플라이언스", "운영 개요") else None
     healing = normalize_healing(load(healing_loader)) if menu in ("안정성·힐링", "컴플라이언스", "운영 개요") else None
     needs_pipeline = menu in ("운영 개요", "배포 파이프라인", "컴플라이언스")
@@ -796,11 +826,11 @@ def render_operations_dashboard(api: Any, header: Callable[..., str | None],
     items = evaluate_compliance(load_compliance_reference(), {
         "health": health, "input_blocked": guard["input_blocked"], "output_checked": guard["output_checked"],
         "traced_count": data["traced_count"], "ci_tests": pipeline.get("tests"),
-        "k8s_ready": platform_ready(platform), "healing": healing_stats(healing),
+        "compose_ready": platform_ready(platform), "healing": healing_stats(healing),
     })
     with st.container(key="operations_content"):
         if menu == "운영 개요":
-            overview_view(data, guard, health, providers(), items, pipeline)
+            overview_view(data, guard, health, providers(), items, pipeline, api, server)
         elif menu == "에이전트 처리":
             agent_view(data, guard)
         elif menu == "가드레일":

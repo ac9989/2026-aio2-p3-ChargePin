@@ -8,7 +8,7 @@
 | 장소 탐색 | Frontend → backend:8000/api/v1/places/suggest → Kakao Local keyword | REST 키 설정 확인. 두 글자 이상 입력 시 호출. 빈 결과도 정상 응답으로 기록 |
 | 채팅 계획 | Frontend → /api/v1/chat/plan → 규칙 Planner → Executor → Kakao Local | 후보 또는 search_request가 반환되면 장소 조회 응답을 받은 근거로 기록. NEEDS_INPUT만으로 원천 성공·실패 단정 불가 |
 | 충전소 | /api/v1/search 또는 /search/{id}/confirm → Executor → KECO getChargerInfo/getChargerStatus → Critic | 서비스 키 설정 확인. HTTP 성공과 원천 정상·최신성은 별개. degraded 응답 가능 |
-| 백엔드 health | Frontend 컨테이너 → http://backend:8000/healthz | 점검 시 ok 응답. 외부 API 상태·DB·캐시 전체 health를 의미하지 않음 |
+| 백엔드 health | Frontend 컨테이너 → http://backend:8000/healthz | 점검 시 ok 응답. 외부 API 상태·인메모리 캐시 전체 health를 의미하지 않음 |
 | 캐시 | 백엔드 메모리 캐시 | 정보 600초, 상태 30초 기본값. 프론트에서 hit·갱신·실패 지표 관측 불가 |
 | LLM | 현재 없음 | 현재 Planner는 규칙 기반. 별도 LLM API 호출 없음 |
 | 서울시 주차 API | 현재 없음 | 현재 충전소 조회 경로는 KECO이며 주차 무료·제한 문구는 KECO 부가정보 |

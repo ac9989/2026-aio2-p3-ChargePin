@@ -13,6 +13,23 @@ ROOT = Path(__file__).resolve().parents[2]
 
 class ApiContractTests(unittest.TestCase):
 
+    @staticmethod
+    def _path_text(node: ast.expr) -> str:
+        """Preserve a route template when an API client path uses an f-string."""
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return node.value
+        if isinstance(node, ast.JoinedStr):
+            parts: list[str] = []
+            for value in node.values:
+                if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                    parts.append(value.value)
+                elif isinstance(value, ast.FormattedValue):
+                    parts.append("{" + ast.unparse(value.value) + "}")
+                else:
+                    raise AssertionError("지원하지 않는 API 경로 형식")
+            return "".join(parts)
+        raise AssertionError("문자열 API 경로가 아닙니다.")
+
     def test_frontend_api_paths_match_backend(self):
         """프론트엔드 API 호출 경로가 백엔드에 존재하는지 확인."""
         tree = ast.parse(
@@ -26,15 +43,23 @@ class ApiContractTests(unittest.TestCase):
             for method in route.methods
         }
 
-        expected_methods = [
-            "login",
-            "default_search",
-            "suggest_places",
-            "search",
-            "plan",
-        ]
+        expected_methods = {
+            "health": ("GET", "/healthz", True),
+            "login": ("POST", "/auth/login", False),
+            "default_search": ("POST", "/search/default", False),
+            "search": ("POST", "/search", False),
+            "suggest_places": ("POST", "/places/suggest", False),
+            "plan": ("POST", "/chat/plan", False),
+            "confirm": ("POST", "/search/{request_id}/confirm", False),
+            "boom": ("GET", "/boom/{scenario}", True),
+            "ops_summary": ("GET", "/ops/summary", False),
+            "ops_platform": ("GET", "/ops/platform", False),
+            "ops_healing": ("GET", "/ops/healing", False),
+            "retry_request": ("POST", "/ops/requests/{request_id}/retry", False),
+            "refresh_cache": ("POST", "/ops/cache/refresh", False),
+        }
 
-        for name in expected_methods:
+        for name, (expected_method, expected_path, root_url) in expected_methods.items():
             function = next(
                 node for node in ast.walk(tree)
                 if isinstance(node, ast.FunctionDef)
@@ -51,10 +76,12 @@ class ApiContractTests(unittest.TestCase):
             self.assertEqual(len(calls), 1, name)
 
             method = ast.literal_eval(calls[0].args[0])
-            path = ast.literal_eval(calls[0].args[1])
+            path = self._path_text(calls[0].args[1])
+            self.assertEqual(method, expected_method, name)
+            self.assertEqual(path, expected_path, name)
 
             self.assertIn(
-                (f"/api/v1{path}", method),
+                (path if root_url else f"/api/v1{path}", method),
                 routes,
                 f"API 계약 불일치: {name} → {method} {path}",
             )

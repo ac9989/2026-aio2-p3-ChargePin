@@ -1,23 +1,22 @@
-"""Data contracts for server-side operations panels (platform and Auto Healing).
+"""Data contracts for Docker Compose operations panels and Auto Healing.
 
 The dashboard renders these panels as "연결 대기" until the backend serves the
 payloads below. Normalizers accept only the documented fields, drop anything
 else (secret values, free text), and never invent missing numbers.
 
 GET /api/v1/ops/platform  (operator only)
-    {"source": "kubernetes" | "compose", "observed_at": ISO-8601,
-     "namespace": "chargepin",
-     "workloads": [{"kind": "Deployment", "name": "chargepin-backend", "desired": 1, "ready": 1,
+    {"source": "compose", "observed_at": ISO-8601,
+     "namespace": "docker-compose",
+     "workloads": [{"kind": "ComposeService", "name": "backend", "desired": 1, "ready": 1,
                     "image": "ghcr.io/ac9989/chargepin-backend:sha-...", "restarts": 0,
                     "liveness": "/healthz", "readiness": "/healthz"}],
-     "services":  [{"name": "chargepin-backend", "type": "ClusterIP", "port": 8000, "endpoints": 1}],
-     "config":    [{"kind": "Secret", "name": "chargepin-secrets", "keys": 6},
-                   {"kind": "ConfigMap", "name": "chargepin-config", "keys": 5}]}
+     "services":  [{"name": "backend", "type": "Compose network", "port": 8000, "endpoints": 1}],
+     "config":    [{"kind": "RuntimeConfig", "name": "backend runtime configuration", "keys": 5}]}
 
 GET /api/v1/ops/healing  (operator only) — ops/autoheal.py policy + JSONL events
     {"policy": {"mode": "apply" | "dry-run", "consecutive_unhealthy": 2, "cooldown_seconds": 120,
                 "window_seconds": 600, "max_restarts": 3, "recovery_timeout_seconds": 120,
-                "scope": ["chargepin_repo-frontend-1"]},
+                "scope": ["aio2_p3_chargepin-frontend-1"]},
      "events": [{"timestamp_utc": ISO-8601, "event": "restart_attempt" | "recovered" | "recovery_timeout"
                  | "restart_failed" | "state_changed" | "recovery_interrupted",
                  "container": "...", "duration_seconds": 8.48}]}
@@ -36,20 +35,19 @@ CODE_HEALING_POLICY = {
     "window_seconds": 600,
     "max_restarts": 3,
     "recovery_timeout_seconds": 120,
-    "scope": ["chargepin_repo-frontend-1"],
+    "scope": ["aio2_p3_chargepin-frontend-1"],
 }
 EXPECTED_RESOURCES = [
-    ("Deployment", "chargepin-backend", "/healthz 생존 · 준비 프로브"),
-    ("Deployment", "chargepin-frontend", "/_stcore/health 생존 · 준비 프로브"),
-    ("Service", "chargepin-backend", "프론트가 서비스 이름으로 백엔드 탐색"),
-    ("Service", "chargepin-frontend", "외부 접속 · 로드밸런싱"),
-    ("ConfigMap", "chargepin-config", "모델명 · 캐시 TTL · 지연 기준"),
-    ("Secret", "chargepin-secrets", "API 키 · 서비스 키 (값은 표시하지 않음)"),
+    ("ComposeService", "backend", "/healthz 상태 확인"),
+    ("ComposeService", "frontend", "/_stcore/health 상태 확인"),
+    ("Compose network", "backend", "프론트가 서비스 이름으로 백엔드 연결"),
+    ("Compose network", "frontend", "EC2 공개 포트로 사용자 접속"),
+    ("RuntimeConfig", "backend runtime configuration", "운영 설정 수만 표시 · 값 미노출"),
 ]
 HEALING_EVENTS = {"restart_attempt", "recovered", "recovery_timeout", "restart_failed",
                   "state_changed", "recovery_interrupted"}
-WORKLOAD_KINDS = {"Deployment", "StatefulSet", "DaemonSet", "Pod", "ComposeService"}
-CONFIG_KINDS = {"Secret", "ConfigMap"}
+WORKLOAD_KINDS = {"ComposeService"}
+CONFIG_KINDS = {"RuntimeConfig"}
 
 
 def _count(value: Any) -> int | None:
@@ -72,7 +70,7 @@ def _time(value: Any) -> datetime | None:
 
 def normalize_platform(payload: Any) -> dict[str, Any] | None:
     """Return a safe platform view, or None when the payload is missing or malformed."""
-    if not isinstance(payload, dict) or payload.get("source") not in ("kubernetes", "compose"):
+    if not isinstance(payload, dict) or payload.get("source") != "compose":
         return None
     workloads = []
     for item in payload.get("workloads") or []:

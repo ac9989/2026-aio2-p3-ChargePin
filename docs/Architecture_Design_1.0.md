@@ -18,7 +18,7 @@
 | 충전 상태 | 환경공단 API의 충전기 상태·갱신 시각·시설 유형·이용 가능 시간·주차 무료 여부를 사용한다. |
 | 충전 가능 수 | 충전소 ID별로 유효한 충전기 상태를 묶어 `충전 가능 n/전체 m`으로 표시한다. |
 | 불확실성 | stale, 누락, 음수, `충전 가능 대수 > 전체 충전기 수`이면 가용성을 추정하지 않고 `확인 불가/정보 지연`으로 표시한다. |
-| 후속 구현 | Kubernetes·Circuit Breaker·자동 복구는 P3-2, Test API·CI/CD 배포 게이트는 P3-3에서 구현·검증한다. |
+| 후속 구현 | Docker Compose healthcheck·컨테이너 감시·자동 복구는 P3-2, Test API·CI/CD 배포 게이트는 P3-3에서 구현·검증한다. |
 
 ### 설계 원칙
 
@@ -52,12 +52,11 @@ flowchart LR
     CRITIC -->|PASS / SAFE_UNAVAILABLE| OUT[출력 가드레일 · 결과 렌더러]
     OUT --> FE
 
-    MEM --> PG[(PostgreSQL\nHandoff · 감사 · 운영 이력)]
-    CACHE --> REDIS[(Redis\n세션 · 캐시 · 회로 상태)]
-    PG --> OBS[이벤트·지표 집계]
+    MEM --> OBS[프로세스 내 운영 이벤트]
+    CACHE --> OBS
     OBS --> DASH
-    CI[GitHub Actions / AWS / Kubernetes] --> DEPLOY[배포 상태 수집기]
-    DEPLOY --> PG
+    CI[GitHub Actions / GHCR / AWS EC2 Docker Compose] --> DEPLOY[배포 상태 수집기]
+    DEPLOY --> OBS
 ```
 
 `Search Orchestrator`는 다섯 번째 에이전트가 아니다. 네 논리 에이전트의 호출 순서, 전체 deadline, 재시도 한도를 결정적으로 적용하는 코드 상태기계다.
@@ -199,9 +198,9 @@ stateDiagram-v2
 | UI 행동 | 손님 | 하급 관리자 | 상급 관리자 | 처리 |
 |---|---|---|---|---|
 | 운영 대시보드 진입 | 불가 | 가능 | 가능 | 손님은 블러 배경의 `관리자 전용 화면입니다.` 팝업을 보고 대시보드 데이터를 요청하지 않는다. |
-| 재처리·캐시 갱신 버튼 | 불가 | 가능 | 가능 | 현재는 시연 상태만 바꾸며 실제 운영 API를 호출하지 않는다. |
-| 재시도 횟수 1/2/3회 정책 | 불가 | 불가 | 가능 | 상급 전용 버튼을 하급 관리자가 누르면 `상급 관리자 전용 기능입니다.` 팝업을 보인다. |
-| 손님/하급 관리자 역할 전이 | 불가 | 불가 | 가능 | 현재는 프런트 시연 상태만 바꾸며, 상급 관리자 자신의 역할을 바꾸는 전이는 제공하지 않는다. |
+| 재처리·캐시 갱신 버튼 | 불가 | 가능 | 가능 | 불완전 검색 요청만 재처리하고, 캐시 갱신은 관리자 전용 운영 API를 호출한다. |
+| 재시도 정책 | 불가 | 조회만 | 조회만 | 자동 재시도는 timeout·연결 실패·408/429·5xx에만 최대 2회 추가 호출한다. 운영 재처리도 별도 최대 2회이며 UI에서 바꾸지 않는다. |
+| 역할 변경 | 불가 | 불가 | 불가 | 역할은 로그인 시에만 정해지며 권한 관리 UI·API를 제공하지 않는다. |
 
 ## 6. SearchRequest, 출처 정규화, Handoff
 
@@ -268,9 +267,8 @@ Executor 시작 전에는 유효한 SearchRequest·확인 상태·실행 계획�
 | stale, 갱신 시각 누락, invalid_count | 불가 | 반복 호출로 신선해지지 않으므로 즉시 안전 응답 |
 | 입력 스키마/가드레일 오류 | 불가 | 4xx/차단 이벤트, Executor 미호출 |
 | Planner 구조화 출력/LLM 오류 | 자동 검색 불가 | 외부 조회 없이 조건 재질문, `llm_plan_error` 기록 |
-| 비치명 이력 DB 실패 | 제한적 재기록 | 검색은 `degraded`로 유지, 감사 필수 운영 행동은 중지 |
 
-상급 관리자 시연의 `retry_attempt_limit`은 최초 실행 뒤의 추가 재시도 횟수다. 값은 1/2/3 중 하나다. Critic은 요청만 하고 Orchestrator만 실행한다. 현재 UI에서는 이 값을 실제 운영 정책에 쓰지 않는다.
+재시도 상한은 사용자나 관리자 화면에서 바꾸지 않는 서버 고정 정책이다. Critic은 재시도 가능 오류에 `RETRY_REQUEST`와 이유를 내고, 실제 실행은 Orchestrator만 한다. 자동 재시도는 timeout·연결 실패·408/429·5xx에 한정해 최초 호출 뒤 최대 2회 추가 실행한다. 인증·권한·응답 형식·stale·비정상 수치는 재시도하지 않는다. 운영자의 수동 재처리는 자동 재시도와 분리해 별도로 최대 2회로 제한한다.
 
 ### 7.3 Cache/Circuit Breaker
 
@@ -301,36 +299,34 @@ API 응답도 신뢰할 수 없는 데이터다. 원문에 있는 지시문을 �
 
 ### 8.2 사람 역할 UI 가드레일
 
-| 역할 | 조회/채팅 | 대시보드 | 재처리/캐시 갱신 | 재시도 정책 1/2/3회 | 역할 전이 | API 키 원문 |
-|---|---:|---:|---:|---:|---:|---:|
-| 손님 | 예 | 팝업 차단 | 불가 | 불가 | 불가 | 불가 |
-| 하급 관리자 | 예 | 가능 | 시연 UI 가능 | 상급 전용 팝업 | 상급 전용 팝업 | 불가 |
-| 상급 관리자 | 예 | 가능 | 시연 UI 가능 | 시연 UI 가능 | `손님→하급/상급`, `하급→손님` 시연 UI 가능 | 불가 |
+| 역할 | 조회/채팅 | 대시보드 | 재처리/캐시 갱신 | 컴플라이언스 CSV | API 키 원문 |
+|---|---:|---:|---:|---:|---:|
+| 손님 | 예 | 팝업 차단 | 불가 | 불가 | 불가 |
+| 하급 관리자 | 예 | 가능 | 가능 | 불가 | 불가 |
+| 상급 관리자 | 예 | 가능 | 가능 | 가능 | 불가 |
 
-검색·채팅 API의 로그인 세션은 서버 경계지만, 이 표는 제출용 프런트엔드 시연의 운영 버튼 동작 기준이다. 손님이 대시보드 버튼을 누르면 `관리자 전용 화면입니다.` 팝업과 블러 처리를 하고, 하급 관리자가 상급 전용 버튼을 누르면 `상급 관리자 전용 기능입니다.` 팝업만 표시한다. 어느 차단 행동도 운영 API나 정책 변경을 호출하지 않는다.
+검색·채팅 API의 로그인 세션은 서버 경계지만, 이 표는 제출용 프런트엔드 시연의 운영 버튼 동작 기준이다. 손님이 대시보드 버튼을 누르면 `관리자 전용 화면입니다.` 팝업과 블러 처리를 한다. 역할은 로그인에서만 정해지며, 어느 역할에도 권한 관리·역할 변경 UI나 API를 제공하지 않는다.
 
 ### 8.3 시크릿·개인정보
 
-- 키·Authorization 헤더·세션 토큰은 Secret Manager/런타임 시크릿 주입 영역에만 둔다. Docker 이미지, Handoff, 로그, DB projection, UI에는 원문을 두지 않는다.
+- 키·Authorization 헤더·세션 토큰은 런타임 시크릿 주입 영역에만 둔다. Docker 이미지, Handoff, 로그, 운영 projection, UI에는 원문을 두지 않는다.
 - 위치·대화·원본 API payload는 최소 범위로 분리 보관하고 분석 이벤트에는 `session_ref`, 해시, 규칙 ID, 참조만 기록한다.
 - 정확한 보존 기간과 위치 정밀도는 구현 전 확정해야 하는 미결정 사항이다.
 
-## 9. 저장소와 운영 관측
+## 9. 메모리 상태와 운영 관측
 
 ### 9.1 저장소 경계
 
-| 저장소/테이블 | 내용 | 실패 시 처리 |
+| 프로세스 내 상태 | 내용 | 재기동 시 처리 |
 |---|---|---|
-| `search_requests` | 조건, 상태, actor 참조, 정책 버전 | 상태 재조회 저하 |
-| `handoff_versions` | 버전, 단계, sanitized state, 해시 | 필수 감사 실패 시 운영 작업 중지 |
-| `source_snapshots` | 출처 식별자·시각·정규화 결과·원본 참조 | 결과 근거 재현 저하 |
-| `retry_history` | 시도·사유·대기·결과 | 실행 중지로 무한 재시도 방지 |
-| `policy_versions` | freshness/timeout/TTL/회로/재시도 정책 | 마지막 검증 정책을 읽기 전용 유지 |
-| `audit_events` | 권한·차단·운영 행동·역할 변경 | 감사 필수 행동 중지 |
-| `deployment_events` | CI job, 이미지 버전, 배포 결과 | 검색 영향 없음 |
-| Redis | 세션, Cache, Circuit, rate limit counter | 캐시/세션 저하, 정책 내 원본 호출 |
+| `MemoryKeeper.handoffs` | 조건, 단계, 재시도, 감사 이벤트 | 프로세스 종료 시 초기화 |
+| `MemoryKeeper.results` | 최근 검색 결과 | 프로세스 종료 시 초기화 |
+| `MemoryKeeper.chat_contexts` | 세션별 마지막 확정 조건 | 프로세스 종료 시 초기화 |
+| `MemoryKeeper.operation_events` | 최근 200건 운영 이벤트 | 프로세스 종료 시 초기화 |
+| 환경공단 인메모리 캐시 | 충전소 정보·상태의 짧은 TTL 캐시 | 캐시 없이 원본 API 재조회 |
+| `ops/logs/autoheal.jsonl` | Watchdog 복구 이벤트 읽기 전용 로그 | 로그가 없으면 대시보드에 연결 대기 표시 |
 
-PostgreSQL은 영속 이력, Redis는 짧은 수명의 세션·캐시·회로 상태를 맡는다. 이력 저장이 느리거나 실패해도 일반 검색은 `degraded`로 계속할 수 있지만, 권한 변경·운영 재처리처럼 감사가 필수인 행동은 영속 기록 실패 시 실행하지 않는다.
+현재 1.0은 별도 DB·Redis를 운영하지 않는다. 검색·대화·운영 이력은 백엔드 프로세스 메모리에만 보관되므로 컨테이너 재기동 시 초기화된다. 영속 저장소와 DB 연결 장애 시험은 이번 범위에서 제외하며, 운영 대시보드는 현재 프로세스와 Watchdog 로그의 관측값만 표시한다.
 
 ### 9.2 구조화 이벤트와 메트릭
 
@@ -353,32 +349,31 @@ PostgreSQL은 영속 이력, Redis는 짧은 수명의 세션·캐시·회로 �
 | 오류 영역 | 필수 분류 | 대시보드 지표 |
 |---|---|---|
 | API | provider, HTTP class, timeout, circuit state | 출처별 성공률·지연·오류·마지막 성공 |
-| DB | store, operation, critical 여부 | DB 오류·degraded·영속 실패 |
 | LLM | model, phase, error class, tokens | Planner 오류·지연·토큰 |
 | 프롬프트/가드레일 | guard stage, rule ID, action | 차단 수·규칙별 추이 |
 | UI 역할 가드레일 | UI 역할, 버튼, 팝업 종류, 차단 여부 | 역할별 팝업·시연 운영 행동 |
 | 배포 | workflow run, image version, environment, decision | Actions/test/build/deploy·차단 사유 |
 
-대시보드는 외부 API, 에이전트 성공·재시도, 데이터 품질, 가드레일, Cache/Circuit 복구, API/DB/LLM/프롬프트 오류, GitHub Actions/AWS/Kubernetes 배포 상태를 모두 읽기 전용 projection으로 보여 준다. 배포 상태는 서명 검증된 webhook 또는 읽기 전용 상태 수집기가 `deployment_events`에 저장한다.
+대시보드는 외부 API, 에이전트 성공·재시도, 데이터 품질, 가드레일, Cache/Circuit 복구, API/LLM/프롬프트 오류, GitHub Actions/GHCR/AWS EC2 Docker Compose 배포 상태를 읽기 전용으로 보여 준다. 배포·복구 상태는 현재 프로세스 이벤트와 읽기 전용 Watchdog 로그를 기반으로 표시한다.
 
 ### 9.3 Health 모델
 
 | 상태 | 의미 |
 |---|---|
 | `ok` | 핵심 API·필수 시크릿·안전한 요청 처리 경로가 준비됨 |
-| `degraded` | 이력 DB/캐시/대시보드 등 비치명 기능 저하, 안전한 검색은 가능 |
+| `degraded` | 캐시·대시보드 관측·외부 API 등 비치명 기능 저하, 안전한 검색은 가능 |
 | `down` | 필수 보안 설정 또는 핵심 요청 처리 불가 |
 
 P3-2에서 liveness는 프로세스 생존만 빠르게 확인하고, readiness는 서비스가 안전한 요청을 처리할 수 있는지 짧은 timeout으로 확인한다.
 
 ## 10. 배포, 테스트, P3-2/P3-3 연계
 
-### 10.1 컨테이너와 AWS
+### 10.1 컨테이너와 AWS EC2 Docker Compose
 
 - API 서비스, Web UI, 운영 대시보드는 독립 Docker 이미지로 만든다.
 - 이미지에는 `.env`와 키를 넣지 않고 런타임 시크릿 참조를 사용한다.
-- ECR 등 AWS 레지스트리에 commit SHA와 릴리스 버전으로 이미지를 추적한다.
-- P3-2에서 Kubernetes Pod/Deployment, Service, 디스커버리·로드밸런싱, health probe, Auto Healing을 구현한다.
+- GHCR에 commit SHA와 릴리스 버전으로 이미지를 추적한다.
+- P3-2에서 Docker Compose healthcheck, 컨테이너 상태 감시, 재시작 기반 Auto Healing을 구현·검증한다.
 
 ### 10.2 CI/CD 게이트
 
@@ -388,13 +383,13 @@ flowchart LR
     TEST -->|실패| BLOCK[빌드·배포 차단 · 결과 알림]
     TEST -->|통과| BUILD[Docker build]
     BUILD --> IMAGE[이미지 태그/검증]
-    IMAGE --> ECR[ECR push]
-    ECR --> DEPLOY[AWS/Kubernetes 배포]
-    DEPLOY --> VERIFY[probe·스모크 검증]
+    IMAGE --> GHCR[GHCR push]
+    GHCR --> DEPLOY[AWS EC2 Docker Compose 배포]
+    DEPLOY --> VERIFY[healthcheck·스모크 검증]
     VERIFY --> NOTICE[배포 이벤트·Slack 등 알림]
 ```
 
-P3-3에서는 테스트 통과 뒤에만 build→Docker→AWS/Kubernetes가 진행되며, 배포·스모크 실패도 다음 승격을 중단하고 `deployment_blocked` 이벤트를 남긴다.
+P3-3에서는 테스트 통과 뒤에만 build→Docker→GHCR→AWS EC2 Docker Compose 배포가 진행되며, 배포·스모크 실패도 다음 승격을 중단하고 `deployment_blocked` 이벤트를 남긴다.
 
 ### 10.3 Test API와 Test Checker
 
@@ -430,7 +425,7 @@ P3-3에서는 테스트 통과 뒤에만 build→Docker→AWS/Kubernetes가 진�
 - [ ] 충전 가능 대수/전체 충전기 수·충전 상태·장소 후보의 출처와 표시 금지가 명확하다.
 - [ ] stale/invalid_count/timeout/LLM 오류의 결정표와 안전 응답이 있다.
 - [ ] 손님/하급 관리자/상급 관리자 UI 가드레일, API 키 비공개가 정의됐다.
-- [ ] API/DB/LLM/프롬프트/UI 역할 가드레일/배포 이벤트와 대시보드 projection이 정의됐다.
+- [ ] API/LLM/프롬프트/UI 역할 가드레일/배포 이벤트와 대시보드 projection이 정의됐다.
 - [ ] API 계약, Cache/Circuit Breaker, rate limit, health 상태가 정의됐다.
 
 ## 12. 미결정 사항
@@ -439,7 +434,7 @@ P3-3에서는 테스트 통과 뒤에만 build→Docker→AWS/Kubernetes가 진�
 2. 서울 서비스 범위, 시설 병합 좌표 오차, 이름·주소 정규화 사전.
 3. 출처별 freshness/timeout/TTL/실패 임계치/cooldown과 rate limit 수치.
 4. 인증 공급자와 token claim 구조, 위치·대화·원본 payload·감사 로그 보존 기간.
-5. AWS/Kubernetes 환경명, 롤백 방식, GitHub webhook 검증, 알림 채널.
+5. AWS EC2 Docker Compose 배포 환경, 이미지 태그·롤백 방식, GitHub webhook 검증, 알림 채널.
 
 확정 전에는 실시간성·응답 시간·가용성 수치를 임의로 약속하지 않는다.
 
@@ -451,6 +446,6 @@ P3-3에서는 테스트 통과 뒤에만 build→Docker→AWS/Kubernetes가 진�
 | Day12~15 보안 실습 | 입력/출력 가드레일, 도구 권한, UI 역할 규칙, 감사 | 8 |
 | day09 logging lab | JSON 구조화 로그, 요청/LLM 지연 | 9.2 |
 | day10 healing lab | 유한 재시도, health, 감시 | 7.2, 9.3 |
-| day11 dashboard lab | 로그/DB 이력/대시보드 분리, degraded | 9 |
-| day06~08 Docker/AWS/CI | 컨테이너, 시크릿 외부 주입, test→build 게이트 | 10 |
+| day11 dashboard lab | 로그/운영 이력/대시보드 분리, degraded | 9 |
+| day06~08 Docker/GHCR/CI | 컨테이너, 시크릿 외부 주입, test→build 게이트 | 10 |
 | Day17 Planning/Tracing | Planning, 상태 전이, trace, 체크포인트 | 3~4 |

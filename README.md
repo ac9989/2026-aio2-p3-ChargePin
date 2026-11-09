@@ -71,5 +71,13 @@ py -m streamlit run app.py
 
 ```powershell
 cd Backend
-py -m unittest discover -s tests -v
+py -m pytest -q
+
+cd ..\Frontend
+py -m pytest -q
+
+cd ..
+py -m pytest -q tests/ops
 ```
+
+테스트 전용 장애 주입과 실행 증빙 절차는 [Test API · Test Checker 안내](docs/Fault_Test_Guide.md)를 따른다. `CHARGEPIN_ENABLE_FAULT_INJECTION`은 로컬 테스트에서만 켠다.

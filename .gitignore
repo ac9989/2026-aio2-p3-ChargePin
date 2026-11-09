@@ -1,5 +1,6 @@
 # Local secrets and runtime artifacts
 .env
+artifacts/
 .venv/
 __pycache__/
 *.py[cod]

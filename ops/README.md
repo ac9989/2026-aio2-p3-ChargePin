@@ -1,7 +1,7 @@
 # ChargePin local Docker Auto Healing watcher (Step 1)
 
 Scope: local development, Windows PowerShell. **Only the Streamlit frontend**
-`chargepin_repo-frontend-1` is eligible for automated restarts. PostgreSQL and
+`aio2_p3_chargepin-frontend-1` is eligible for automated restarts. PostgreSQL and
 Redis are deliberately excluded to protect data and support investigation.
 
 ## How it works
@@ -20,7 +20,7 @@ Redis are deliberately excluded to protect data and support investigation.
 - Logs contain UTC timestamps and may be used as a basis for a *real* fault
   injection report. They do not represent measured production incidents.
 
-## Commands from ChargePin_repo
+## Commands from the ChargePin project root
 
 ```powershell
 python .\ops\autoheal.py --once

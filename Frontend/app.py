@@ -783,23 +783,16 @@ def render_chat() -> None:
 def render_status_demo() -> None:
     labels = {1: "결과 없음", 2: "정보 지연", 3: "요청 제한", 4: "제공자 인증 만료", 5: "AI 챗 연결 실패"}
     with st.popover("상태 시연", icon=":material/bolt:", help="상태 시연", key="status_bolt"):
-        group = st.radio("시연 대상", ["사용자 화면", "운영 대시보드"], horizontal=True, key="demo_group")
-        if group == "사용자 화면":
-            st.caption("테스트 전용 · 사용자 화면 상태")
-            scenario = st.selectbox("시나리오", list(labels), format_func=lambda item: f"{labels[item]} · boom/{item}")
-            if st.button("상태 적용", use_container_width=True):
-                try:
-                    payload = API.boom(scenario, access_token())
-                    level = st.info if scenario in (1, 2, 4) else st.warning
-                    level(f"[시연] {payload['code']} · {payload['message']}")
-                except ApiError as error:
-                    payload = error.payload or {}
-                    st.error(f"[시연] {payload.get('code', 'ERROR')} · {error.message}")
-        else:
-            scenario = st.selectbox("시나리오", ["요청 재처리", "캐시 갱신", "재시도 정책"], key="dashboard_demo_scenario")
-            st.caption("운영 API 연결 전 시연 안내입니다.")
-            if st.button("상태 확인", use_container_width=True):
-                st.info(f"[시연] {scenario} 기능은 운영 API 연결 후 사용할 수 있어요.")
+        st.caption("테스트 전용 · 사용자 화면 상태")
+        scenario = st.selectbox("시나리오", list(labels), format_func=lambda item: f"{labels[item]} · boom/{item}")
+        if st.button("상태 적용", use_container_width=True):
+            try:
+                payload = API.boom(scenario, access_token())
+                level = st.info if scenario in (1, 2, 4) else st.warning
+                level(f"[시연] {payload['code']} · {payload['message']}")
+            except ApiError as error:
+                payload = error.payload or {}
+                st.error(f"[시연] {payload.get('code', 'ERROR')} · {error.message}")
 
 
 def render_header(dashboard_view: bool = False, navigation: Any = None) -> str | None:

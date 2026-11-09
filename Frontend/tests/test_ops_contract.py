@@ -1,4 +1,4 @@
-"""Server operations contracts: platform (Kubernetes) and Auto Healing."""
+"""Server operations contracts: Docker Compose platform and Auto Healing."""
 import unittest
 
 from dashboard_data import evaluate_compliance
@@ -8,21 +8,21 @@ from ops_contract import healing_stats, normalize_healing, normalize_platform, p
 class PlatformContractTests(unittest.TestCase):
     def test_secret_values_and_unknown_kinds_never_survive(self):
         platform = normalize_platform({
-            "source": "kubernetes", "namespace": "chargepin", "observed_at": "2026-11-08T00:00:00Z",
-            "workloads": [{"kind": "Deployment", "name": "chargepin-backend", "desired": 1, "ready": 1,
+            "source": "compose", "namespace": "docker-compose", "observed_at": "2026-11-08T00:00:00Z",
+            "workloads": [{"kind": "ComposeService", "name": "backend", "desired": 1, "ready": 1,
                            "image": "ghcr.io/ac9989/chargepin-backend:sha-abc", "restarts": 0},
-                          {"kind": "Job", "name": "ignored"}],
-            "config": [{"kind": "Secret", "name": "chargepin-secrets", "keys": 6, "data": {"OPENAI_API_KEY": "sk-x"}}],
+                          {"kind": "Deployment", "name": "ignored"}],
+            "config": [{"kind": "RuntimeConfig", "name": "backend runtime", "keys": 6, "value": "never-expose"}],
         })
-        self.assertEqual([item["name"] for item in platform["workloads"]], ["chargepin-backend"])
-        self.assertNotIn("sk-x", str(platform))
+        self.assertEqual([item["name"] for item in platform["workloads"]], ["backend"])
+        self.assertNotIn("never-expose", str(platform))
         self.assertTrue(platform_ready(platform))
 
     def test_missing_or_partial_replicas_are_not_ready(self):
         self.assertIsNone(normalize_platform({"source": "unknown"}))
         self.assertFalse(platform_ready(None))
-        partial = normalize_platform({"source": "kubernetes", "workloads": [
-            {"kind": "Deployment", "name": "chargepin-frontend", "desired": 2, "ready": 1}]})
+        partial = normalize_platform({"source": "compose", "workloads": [
+            {"kind": "ComposeService", "name": "frontend", "desired": 1, "ready": 0}]})
         self.assertFalse(platform_ready(partial))
 
 
@@ -43,11 +43,11 @@ class HealingContractTests(unittest.TestCase):
         self.assertIsNone(healing_stats(None)["rate"])
 
     def test_live_platform_and_healing_only_promote_implemented_items(self):
-        reference = {"items": [{"id": "R-2", "status": "미착수", "live": "k8s_ready"},
-                               {"id": "R-2b", "status": "구현", "live": "k8s_ready"},
+        reference = {"items": [{"id": "R-2", "status": "미착수", "live": "compose_ready"},
+                               {"id": "R-2b", "status": "구현", "live": "compose_ready"},
                                {"id": "R-5", "status": "부분", "live": "healing"}]}
         items = {item["id"]: item for item in evaluate_compliance(
-            reference, {"k8s_ready": True, "healing": {"recovered": 1, "attempts": 1}})}
+            reference, {"compose_ready": True, "healing": {"recovered": 1, "attempts": 1}})}
         self.assertEqual(items["R-2"]["status"], "미착수")
         self.assertEqual(items["R-2b"]["status"], "충족")
         self.assertEqual(items["R-5"]["status"], "부분")

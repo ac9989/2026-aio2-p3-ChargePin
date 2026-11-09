@@ -105,12 +105,12 @@
   {
    "id": "R-2",
    "area": "P3-2",
-   "control_title": "오케스트레이션 매니페스트",
-   "control": "Pod · Service · Secret 매니페스트와 서비스 디스커버리",
-   "status": "미착수",
-   "evidence": "저장소에 매니페스트 없음 · 대시보드 표시 준비 완료(GET /api/v1/ops/platform)",
+   "control_title": "Docker Compose 운영 구성",
+   "control": "Frontend · Backend Compose 서비스, Health Check, 서비스 이름 기반 연결",
+   "status": "구현",
+   "evidence": "docker-compose.yml · 관리자 전용 Compose 상태 조회(GET /api/v1/ops/platform)",
    "source": "저장소",
-   "live": "k8s_ready"
+   "live": "compose_ready"
   },
   {
    "id": "R-3",
@@ -197,5 +197,5 @@
    "source": "관리표"
   }
  ],
- "status_legend_note": "실시간 신호는 '구현' 항목만 '충족'으로 올립니다. 매니페스트·힐링을 배포 환경에 적용하면 해당 항목을 '구현'으로 바꿔 주세요."
+ "status_legend_note": "실시간 신호는 '구현' 항목만 '충족'으로 올립니다. Docker Compose 운영 구성·힐링을 배포 환경에 적용하면 해당 항목을 '구현'으로 바꿔 주세요."
 }

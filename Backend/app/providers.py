@@ -124,11 +124,17 @@ class KakaoPlaceAdapter:
         except HTTPError as error:
             if error.code in (401, 403):
                 raise ProviderError("KAKAO", "카카오 장소 API 인증을 확인해 주세요.") from error
-            if error.code == 429:
+            if error.code in (408, 429):
                 raise ProviderError("KAKAO", "카카오 장소 API 요청이 제한되었습니다. 잠시 후 다시 시도해 주세요.", retryable=True) from error
-            raise ProviderError("KAKAO", "카카오 장소 정보를 가져오지 못했습니다.", retryable=True) from error
-        except (URLError, TimeoutError, json.JSONDecodeError) as error:
+            raise ProviderError(
+                "KAKAO",
+                "카카오 장소 정보를 가져오지 못했습니다.",
+                retryable=500 <= error.code <= 599,
+            ) from error
+        except (URLError, TimeoutError) as error:
             raise ProviderError("KAKAO", "카카오 장소 응답이 지연되고 있습니다.", retryable=True) from error
+        except json.JSONDecodeError as error:
+            raise ProviderError("KAKAO", "카카오 장소 응답 형식을 확인할 수 없습니다.") from error
         documents = payload.get("documents", [])
         candidates: list[PlaceCandidate] = []
         for document in documents:
@@ -194,9 +200,13 @@ class EnvironmentChargerAdapter:
         except HTTPError as error:
             if error.code in (401, 403):
                 raise ProviderError("KECO", "환경공단 API 인증 또는 활용 신청 상태를 확인해 주세요.") from error
-            if error.code == 429:
+            if error.code in (408, 429):
                 raise ProviderError("KECO", "환경공단 API 요청이 제한되었습니다. 잠시 후 다시 시도해 주세요.", retryable=True) from error
-            raise ProviderError("KECO", "환경공단 API를 호출하지 못했습니다.", retryable=True) from error
+            raise ProviderError(
+                "KECO",
+                "환경공단 API를 호출하지 못했습니다.",
+                retryable=500 <= error.code <= 599,
+            ) from error
         except (URLError, TimeoutError) as error:
             raise ProviderError("KECO", "환경공단 응답이 지연되고 있습니다.", retryable=True) from error
         try:

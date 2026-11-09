@@ -6,6 +6,11 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    environment:
+      AUTOHEAL_LOG_PATH: /ops/logs/autoheal.jsonl
+      CHARGEPIN_FRONTEND_HEALTH_URL: http://frontend:8501/_stcore/health
+    volumes:
+      - ./ops/logs:/ops/logs:ro
     healthcheck:
       test:
         [
@@ -25,6 +30,7 @@ services:
       CHARGEPIN_API_BASE_URL: ${CHARGEPIN_API_BASE_URL_DOCKER:-http://backend:8000/api/v1}
       # 브라우저에서 사용하는 카카오 JavaScript 키만 프론트 컨테이너에 전달
       KAKAO_JAVASCRIPT_KEY: ${KAKAO_JAVASCRIPT_KEY:-}
+      CHARGEPIN_DASHBOARD_SERVER_OPS: "true"
     ports:
       - "8501:8501"
     depends_on:

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 import os
 import re
-from time import perf_counter
+from time import perf_counter, sleep
 from typing import Any, Literal
 import unicodedata
 from uuid import uuid4
@@ -17,8 +17,10 @@ from .models import (
     ConnectorType, PlaceCandidate, Point, SearchInput, SearchOrigin, SearchRequest,
     SearchResponse,
 )
+from .operations import compose_platform_snapshot, healing_snapshot
 from .providers import EnvironmentChargerAdapter, KakaoPlaceAdapter, ProviderError, kst_now
 from .store import MemoryKeeper
+from .testkit import TestScenarioController
 
 
 GANGNAM_STATION = Point(lat=37.4980, lng=127.0270, source="initial_default")
@@ -122,10 +124,11 @@ Rules:
   set location_text to an empty string and use_previous_location to true. Otherwise set it to false.
 """
 
-    def __init__(self) -> None:
+    def __init__(self, test_scenarios: TestScenarioController | None = None) -> None:
         # The key remains backend-only. It is never sent to Streamlit or written to a handoff.
         self._api_key = os.environ.get("OPENAI_API_KEY", "").strip()
         self._model = os.environ.get("OPENAI_PLANNER_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini"
+        self._test_scenarios = test_scenarios
 
     @property
     def model(self) -> str:
@@ -348,6 +351,11 @@ Rules:
         """Use GPT-4o mini when configured; fail closed if that configured call fails."""
         if self._has_out_of_range_value(message):
             return None, "range_out_of_bounds", False
+        if self._test_scenarios and self._test_scenarios.has_invalid_llm_schema():
+            try:
+                LlmPlannerExtraction.model_validate(self._test_scenarios.invalid_llm_payload())
+            except Exception:
+                return None, "llm_plan_error", False
         if not self._api_key:
             return self._rule_draft(message, engine="rule_no_openai_key")
         if not self._requires_llm(message, previous_context):
@@ -429,6 +437,17 @@ class Critic:
                 invalid_count += 1
                 continue
 
+            available = availability.available_chargers
+            total = availability.total_chargers
+            if available is None or total is None or available < 0 or total < 0 or available > total:
+                availability.state = AvailabilityState.UNAVAILABLE
+                availability.available_chargers = None
+                availability.total_chargers = None
+                availability.label = "충전 상태 확인 불가"
+                availability.reason = "충전기 상태 집계가 유효하지 않습니다."
+                invalid_count += 1
+                continue
+
             if result.reported_at is None:
                 availability.state = AvailabilityState.UNAVAILABLE
                 availability.available_chargers = None
@@ -453,14 +472,22 @@ class Critic:
             return "SAFE_UNAVAILABLE", findings, "degraded"
         return "PASS", findings, "completed"
 
+    @staticmethod
+    def requests_retry(error: ProviderError) -> bool:
+        """Return a decision only; the Orchestrator is the sole retry executor."""
+        return error.retryable
+
 
 class SearchOrchestrator:
+    max_automatic_retries = 2
     max_manual_retries = 2
+    automatic_retry_backoff_seconds = (0.25, 0.5)
 
     def __init__(self) -> None:
         self.memory = MemoryKeeper()
         self.input_guardrail = InputGuardrail()
-        self.planner = Planner()
+        self.test_scenarios = TestScenarioController()
+        self.planner = Planner(self.test_scenarios)
         self.executor = Executor(KakaoPlaceAdapter(), EnvironmentChargerAdapter())
         self.critic = Critic()
 
@@ -473,15 +500,82 @@ class SearchOrchestrator:
 
     def _run(self, request: SearchRequest) -> SearchResponse:
         started = perf_counter()
-        self.memory.update(request.request_id, execution_plan={"providers": ["KAKAO_PLACE", "KECO_EV"], "attempt_no": 1})
+        self.memory.update(
+            request.request_id,
+            execution_plan={
+                "providers": ["KAKAO_PLACE", "KECO_EV"],
+                "attempt_no": 1,
+                "automatic_retry_limit": self.max_automatic_retries,
+            },
+        )
         provider_error: ProviderError | None = None
-        try:
-            results = self.executor.execute(request)
-            decision, findings, status = self.critic.review(results)
-        except ProviderError as error:
-            provider_error = error
-            results = []
-            decision, findings, status = "SAFE_UNAVAILABLE", [error.user_message], "degraded"
+        recovered_provider: str | None = None
+        automatic_retries = 0
+        while True:
+            try:
+                scenario = self.test_scenarios.executor_scenario()
+                if scenario:
+                    self.memory.update(request.request_id, test_scenario=scenario)
+                    self.memory.record_operation(
+                        "test_fault",
+                        "injected",
+                        request_id=request.request_id,
+                        scenario=scenario,
+                        stage="executor",
+                    )
+                results = self.test_scenarios.execute_fixture(request)
+                if results is None:
+                    results = self.executor.execute(request)
+            except ProviderError as error:
+                provider_error = error
+                if not self.critic.requests_retry(error) or automatic_retries >= self.max_automatic_retries:
+                    results = []
+                    decision, findings, status = "SAFE_UNAVAILABLE", [error.user_message], "degraded"
+                    break
+
+                automatic_retries += 1
+                recovered_provider = error.provider
+                attempt = self.memory.add_retry(
+                    request.request_id,
+                    f"provider:{error.provider}",
+                    kind="automatic",
+                )
+                self.memory.record_operation(
+                    "retry",
+                    "automatic",
+                    request_id=request.request_id,
+                    attempt=attempt,
+                    provider=error.provider,
+                )
+                self.memory.update(
+                    request.request_id,
+                    execution_plan={
+                        "providers": ["KAKAO_PLACE", "KECO_EV"],
+                        "attempt_no": automatic_retries + 1,
+                        "automatic_retry_limit": self.max_automatic_retries,
+                    },
+                )
+                sleep(self.automatic_retry_backoff_seconds[automatic_retries - 1])
+                continue
+            except Exception:
+                results = []
+                decision, findings, status = "SAFE_UNAVAILABLE", ["검색 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."], "degraded"
+                self.memory.record_audit(request.request_id, "executor_exception")
+                self.memory.record_operation("agent_error", "failed", request_id=request.request_id, stage="executor")
+                break
+
+            try:
+                decision, findings, status = self.critic.review(results)
+                # The preceding upstream error was recovered; keep its provider only
+                # as retry telemetry, not as the final search failure cause.
+                provider_error = None
+                break
+            except Exception:
+                results = []
+                decision, findings, status = "SAFE_UNAVAILABLE", ["검색 결과를 검증하지 못했습니다. 잠시 후 다시 시도해 주세요."], "degraded"
+                self.memory.record_audit(request.request_id, "critic_exception")
+                self.memory.record_operation("agent_error", "failed", request_id=request.request_id, stage="critic")
+                break
         response = SearchResponse(request_id=request.request_id, status=status, applied_request=request, results=results, critic_decision=decision, critic_findings=findings)
         self.memory.save_result(request.request_id, response.model_dump(mode="json"))
         handoff = self.memory.handoffs.get(request.request_id, {})
@@ -495,7 +589,9 @@ class SearchOrchestrator:
             critic_decision=decision,
             quality_issue_count=len(findings),
             retry_count=len(handoff.get("retry_history", [])),
+            automatic_retry_count=automatic_retries,
             provider=provider_error.provider if provider_error else None,
+            recovered_provider=recovered_provider if provider_error is None and automatic_retries else None,
         )
         return response
 
@@ -503,12 +599,16 @@ class SearchOrchestrator:
         handoff = self.memory.handoffs.get(request_id)
         if handoff is None or "search_request" not in handoff:
             raise KeyError(request_id)
-        if len(handoff.get("retry_history", [])) >= self.max_manual_retries:
+        manual_retries = sum(
+            event.get("kind", "manual") == "manual"
+            for event in handoff.get("retry_history", [])
+        )
+        if manual_retries >= self.max_manual_retries:
             raise ValueError("이 요청은 재처리 가능 횟수(최대 2회)를 모두 사용했습니다.")
         request = SearchRequest.model_validate(handoff["search_request"])
         request.requested_at = kst_now()
         request.user_confirmed = True
-        attempt = self.memory.add_retry(request_id, "operator_reprocess")
+        attempt = self.memory.add_retry(request_id, "operator_reprocess", kind="manual")
         self.memory.record_operation("retry", "requested", request_id=request_id, attempt=attempt, actor_role=user_role)
         return self._run(request)
 
@@ -533,6 +633,16 @@ class SearchOrchestrator:
         events = list(self.memory.operation_events)
         search_events = [event for event in events if event.get("event_type") == "search"]
         quality_events = [event for event in search_events if int(event.get("quality_issue_count") or 0) > 0]
+        guardrail_categories = {
+            "PROMPT_OVERRIDE": 0,
+            "SECRET_REQUEST": 0,
+            "OTHER_USER_DATA": 0,
+            "PRIVILEGE_CHANGE": 0,
+        }
+        for event in events:
+            category = event.get("category") if event.get("event_type") == "guardrail" else None
+            if category in guardrail_categories:
+                guardrail_categories[category] += 1
         guardrail_count = sum(
             1 for handoff in self.memory.handoffs.values()
             if "guardrail_blocked" in handoff.get("audit_events", [])
@@ -546,6 +656,7 @@ class SearchOrchestrator:
                 "completed_count": sum(event.get("status") == "completed" for event in search_events),
                 "degraded_count": sum(event.get("status") == "degraded" for event in search_events),
                 "guardrail_block_count": guardrail_count,
+                "guardrail_category_counts": guardrail_categories,
                 "retry_count": retry_count,
                 "quality_issue_count": len(quality_events),
             },
@@ -559,6 +670,12 @@ class SearchOrchestrator:
             "recent_provider_errors": list(reversed(provider_errors[-10:])),
             "cache": self.executor.cache_snapshot(),
         }
+
+    def compose_platform(self) -> dict[str, Any]:
+        return compose_platform_snapshot()
+
+    def healing_status(self) -> dict[str, Any]:
+        return healing_snapshot()
 
     def default_search(self, user_role: str) -> SearchResponse:
         request_id = self._request_id()
@@ -609,8 +726,17 @@ class SearchOrchestrator:
             "planner_engine": draft.planner_engine if draft is not None else self.planner.model,
         })
         if status == "llm_plan_error":
+            scenario = self.test_scenarios.active()
+            if scenario == "llm_invalid_schema":
+                self.memory.update(request_id, test_scenario=scenario)
             self.memory.record_audit(request_id, "llm_plan_error")
-            self.memory.record_operation("planner", "failed", request_id=request_id, reason="llm_plan_error")
+            self.memory.record_operation(
+                "planner",
+                "failed",
+                request_id=request_id,
+                reason="llm_plan_error",
+                scenario=scenario if scenario == "llm_invalid_schema" else None,
+            )
             return ChatPlanResponse(
                 request_id=request_id,
                 status="NEEDS_INPUT",
