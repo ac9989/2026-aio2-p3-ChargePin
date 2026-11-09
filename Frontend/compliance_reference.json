@@ -145,9 +145,9 @@
    "id": "R-6",
    "area": "P3-2",
    "control_title": "필수 장애시험",
-   "control": "외부 API · Executor · DB · LLM 오류 각 3회 주입과 복구 확인",
+   "control": "외부 API · Executor · LLM 오류 각 3회 주입과 복구 확인",
    "status": "미착수",
-   "evidence": "0 / 12회",
+   "evidence": "0 / 9회",
    "source": "관리표"
   },
   {

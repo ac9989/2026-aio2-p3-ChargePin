@@ -53,8 +53,8 @@
     },
     {
       "title": "필수 장애시험",
-      "status": "0 / 12회",
-      "detail": "외부 API · Executor · DB · LLM 오류 각각 3회"
+      "status": "0 / 9회",
+      "detail": "외부 API · Executor · LLM 오류 각각 3회"
     },
     {
       "title": "자동복구 실증",
