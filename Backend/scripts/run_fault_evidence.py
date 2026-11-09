@@ -21,6 +21,11 @@ SEARCH_BODY = {
     "region_filters": [],
 }
 SCENARIOS = ("timeout", "executor_exception", "llm_invalid_schema")
+EXPECTED_RETRY_DELTAS = {
+    "timeout": 2,
+    "executor_exception": 2,
+    "llm_invalid_schema": 2,
+}
 
 
 def request(base_url: str, method: str, path: str, *, token: str | None = None, body: dict | None = None) -> tuple[int, dict]:
@@ -89,10 +94,7 @@ def main() -> int:
 
                 after_status, after = request(args.base_url, "GET", "/api/v1/ops/summary", token=token)
                 retry_delta = int(after.get("metrics", {}).get("retry_count", 0)) - before_retries if after_status == 200 else None
-                if scenario == "timeout":
-                    passed = passed and retry_delta == 2
-                elif retry_delta not in (0, None):
-                    passed = False
+                passed = passed and retry_delta == EXPECTED_RETRY_DELTAS[scenario]
                 records.append({
                     "scenario": scenario,
                     "run": run_no,

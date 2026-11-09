@@ -96,6 +96,10 @@ class AutomaticRecoveryTests(unittest.TestCase):
         events = [e for e in self.service.memory.operation_events
                   if e.get("event_type") == "retry" and e.get("stage") == "planner"]
         self.assertEqual(len(events), 2)
+        self.assertEqual(
+            [item["reason"] for item in self.service.memory.handoffs[plan.request_id]["retry_history"]],
+            ["planner_llm_error", "planner_llm_error"],
+        )
 
     def test_ft04_persistent_schema_failure_does_not_reach_executor(self):
         self.configure_llm()
@@ -113,6 +117,9 @@ class AutomaticRecoveryTests(unittest.TestCase):
         self.assertEqual(plan.status, "NEEDS_INPUT")
         self.assertIn("llm_plan_error",
                       self.service.memory.handoffs[plan.request_id]["audit_events"])
+        self.assertEqual(
+            len(self.service.memory.handoffs[plan.request_id]["retry_history"]), 2
+        )
 
     def test_validation_and_guardrail_do_not_trigger_llm_retry(self):
         self.configure_llm()

@@ -126,8 +126,8 @@ sequenceDiagram
 | --- | --- | --- |
 | API timeout·연결 오류·429·5xx | 0.25초·0.5초 대기, 자동 최대 2회 재시도 | retry history·운영 이벤트, 최종 실패 시 안전 안내 |
 | 401/403 인증·응답 형식 오류 | 자동 재시도하지 않음 | 안전한 원인 범주만 표시 |
-| Executor 예외 | 결과를 `SAFE_UNAVAILABLE`로 종료 | `agent_error` 오류 로그 |
-| LLM 호출·스키마 오류 | Executor 호출 없이 `NEEDS_INPUT` 종료 | Planner 실패 이벤트·재입력 안내 |
+| Executor 예외 | 일시 오류는 자동 최대 2회 재시도, 지속 오류는 `SAFE_UNAVAILABLE` 종료 | `retry`·`agent_error` 오류 로그 |
+| LLM 호출·스키마 오류 | 일시 오류는 자동 최대 2회 재시도, 지속 오류는 Executor 호출 없이 `NEEDS_INPUT` 종료 | Planner retry·실패 이벤트·재입력 안내 |
 | stale·invalid_count | Critic이 상태를 낮춤 | 정보 지연/확인 불가·Critic 판정 |
 | frontend unhealthy 연속 관측 | 별도 Watchdog 정책이 재시작을 시도 | `ops/logs/autoheal.jsonl`과 Healing Snapshot |
 | 새 배포 healthcheck 실패 | 이전 성공 SHA로 롤백 시도 | CD 실행 로그·Discord 실패 알림 |
@@ -172,9 +172,9 @@ flowchart LR
 
 | 그룹 | 현재 자동 검증 |
 | --- | --- |
-| Backend | Agent·Guardrail·SearchRequest·서울 범위·Test API·복구·Operations·구조화 로그 보안 (40개) |
+| Backend | Agent·Guardrail·SearchRequest·서울 범위·Test API·복구·Operations·구조화 로그 보안·bounded retry (46개) |
 | Frontend | 채팅 안내·지도 안전성·역할 UI·대시보드 계약 (24개) |
 | Ops | Watchdog 정책·Docker 배포 실패/롤백 정책 (13개) |
-| 장애 주입 | timeout(FT-01), executor_exception(FT-02), llm_invalid_schema(FT-04)를 각 3회 실행해 9회 증빙 |
+| 장애 주입 | timeout(FT-01), executor_exception(FT-02), llm_invalid_schema(FT-04)를 각 3회 실행해 9회 증빙. 세 시나리오 모두 자동 재시도 2회 뒤 안전한 종료를 확인 |
 
 범위 밖: Kubernetes, 영속 DB/Redis와 DB 연결 장애, 일반 주차장·빈자리 예측, 역할 승급·강등 화면, API 키·개인정보 로그 저장.

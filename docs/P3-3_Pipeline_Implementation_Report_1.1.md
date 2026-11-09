@@ -6,7 +6,7 @@
 - 작성일: 2026-11-09
 - 기준 커밋: `467e1e1`
 - 대상 범위: pytest, Test API·Checker, GitHub Actions CI/CD, GHCR, AWS EC2, Discord 실패 알림
-- 1.0 대비 반영: Backend 40개 테스트, 실제 9회 장애시험, 실패 차단·Discord 수신 증빙
+- 1.0 대비 반영: Backend 46개 bounded retry 테스트, 최신 9회 장애시험, 실패 차단·Discord 수신 증빙
 
 ---
 
@@ -53,10 +53,10 @@ flowchart LR
 
 | 그룹 | 파일 수 | 테스트 수 | 주요 검증 |
 | --- | ---: | ---: | --- |
-| Backend | 6개 | **40개** | 자연어 경로, SearchRequest, 서울 범위, Guardrail, Critic, 재시도, API 계약, Test API, 구조화 로그 |
+| Backend | 7개 | **46개** | 자연어 경로, SearchRequest, 서울 범위, Guardrail, Critic, 재시도, API 계약, Test API, 구조화 로그, transient/persistent bounded retry |
 | Frontend | 3개 | 24개 | 채팅 안내, 지도 HTML 이스케이프, 역할 UI, 대시보드 계약 |
 | Ops | 2개 | 13개 | Auto Healing 재시작 정책, 쿨다운·상한, Docker 배포·롤백 정책 |
-| 합계 | **11개** | **77개** | 단위·계약·복구 정책 |
+| 합계 | **12개** | **83개** | 단위·계약·복구 정책 |
 
 실행 명령은 다음과 같다.
 
@@ -71,7 +71,7 @@ cd ..
 uv run --with pytest==8.3.5 pytest -q tests/ops
 ```
 
-Backend 40개는 구조화 로그 보안 테스트를 포함해 통과를 확인했다. CI에서는 이 세 테스트 그룹이 모두 성공해야 Docker build Job이 시작된다.
+Backend 46개는 구조화 로그 보안과 transient/persistent Executor·Planner bounded retry 테스트를 포함해 통과를 확인했다. CI에서는 이 세 테스트 그룹이 모두 성공해야 Docker build Job이 시작된다.
 
 ## 4. Test API·Test Checker·실행 증빙
 
@@ -87,8 +87,8 @@ Test API는 `CHARGEPIN_ENABLE_FAULT_INJECTION=true`과 상급 관리자 인증�
 | `stale` | 7일 초과 보고 시각 | `degraded`, `DELAYED`, 수량 미표시 |
 | `invalid_count` | 빈자리 > 전체 충전기 수 | `degraded`, `UNAVAILABLE`, 수량 미표시 |
 | FT-01 `timeout` | 재시도 가능한 Provider timeout | 최초 1회+자동 재시도 2회, 안전한 실패 |
-| FT-02 `executor_exception` | Executor 강제 예외 | 내부 500 원문 없이 안전한 실패 |
-| FT-04 `llm_invalid_schema` | Planner 스키마 오류 | `NEEDS_INPUT`, `llm_plan_error`, Provider 미호출 |
+| FT-02 `executor_exception` | Executor 강제 예외 | 자동 재시도 2회 후 내부 500 원문 없이 안전한 실패 |
+| FT-04 `llm_invalid_schema` | Planner 스키마 오류 | Planner 자동 재시도 2회 후 `NEEDS_INPUT`, Provider 미호출 |
 
 ### 4.3 실제 9회 실행
 
@@ -97,8 +97,8 @@ Test API는 `CHARGEPIN_ENABLE_FAULT_INJECTION=true`과 상급 관리자 인증�
 | 시나리오 | 반복 | 결과 |
 | --- | ---: | --- |
 | FT-01 `timeout` | 3 | 모두 `SAFE_UNAVAILABLE`, 자동 재시도 2회 |
-| FT-02 `executor_exception` | 3 | 모두 `SAFE_UNAVAILABLE` |
-| FT-04 `llm_invalid_schema` | 3 | 모두 `NEEDS_INPUT`, Provider 미호출 |
+| FT-02 `executor_exception` | 3 | 모두 `SAFE_UNAVAILABLE`, 자동 재시도 2회 |
+| FT-04 `llm_invalid_schema` | 3 | 모두 `NEEDS_INPUT`, Provider 미호출, Planner 자동 재시도 2회 |
 | 합계 | **9 / 9** | 모든 기록 `passed: true` |
 
 이는 DB를 도입하지 않은 현재 구현의 3개 시나리오 실행 증빙이다. 교육 가이드의 DB 연결 오류(FT-03)는 구현·시험하지 않았으므로, 9/9를 공통 4개 시나리오 전체 완료라고 표현하지 않는다.
@@ -150,7 +150,7 @@ CD workflow는 성공한 `main` CI의 `workflow_run`만 배포 후보로 처리�
 
 | 항목 | 상태 |
 | --- | --- |
-| Backend·Frontend·Ops 자동 테스트 | 77개 테스트 구성, 최신 main CI 성공 기록 있음 |
+| Backend·Frontend·Ops 자동 테스트 | 83개 테스트 구성, 현재 로컬 실행 통과. 현재 커밋의 CI run은 push 뒤 확인 |
 | Test API 3개 시나리오 × 3회 | 9/9 JSON 증빙 있음 |
 | CI 테스트 실패 차단 | 실패 run에서 Docker build 미실행으로 증빙 |
 | 실패 알림 채널 | Discord 수신 확인·실패 run 링크 있음 |
@@ -161,6 +161,6 @@ CD workflow는 성공한 `main` CI의 `workflow_run`만 배포 후보로 처리�
 
 ## 8. 결론
 
-ChargePin은 테스트 → Docker build → GHCR → AWS EC2 Docker Compose 배포의 게이트를 구현했고, 테스트 실패 시 이미지 빌드를 차단하고 Discord 채널에 실제 알림을 보냈다. 구조화 로그 보안 테스트를 포함한 Backend 40개, Frontend 24개, Ops 13개의 테스트 구조를 운영한다. 구현한 3개 장애 시나리오는 각 3회로 총 9/9 기대 결과를 확인했다.
+ChargePin은 테스트 → Docker build → GHCR → AWS EC2 Docker Compose 배포의 게이트를 구현했고, 테스트 실패 시 이미지 빌드를 차단하고 Discord 채널에 실제 알림을 보냈다. 구조화 로그 보안과 bounded retry를 포함한 Backend 46개, Frontend 24개, Ops 13개의 테스트 구조를 운영한다. 구현한 3개 장애 시나리오는 각 3회로 총 9/9 기대 결과를 확인했다.
 
 남은 제한은 DB를 두지 않아 FT-03을 구현하지 않은 점, EC2 서비스 본체의 고의 장애 주입과 상시 Watchdog를 아직 운영하지 않는 점이다.

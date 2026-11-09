@@ -755,20 +755,31 @@ class SearchOrchestrator:
                 message="안전 정책상 시스템 지침·비밀 정보·권한 변경 요청은 처리할 수 없습니다. 충전소 검색 조건을 입력해 주세요.",
             )
         previous_context = self.memory.get_chat_context(session_ref)
-        draft, status, ambiguous = self.planner.draft(
-            message, request_id, previous_context,
-            on_retry=lambda attempt: self.memory.record_operation(
-                "retry", "automatic", request_id=request_id,
-                attempt=attempt, stage="planner",
-            ),
-        )
+        # Start the Handoff before a conditional LLM call so automatic Planner
+        # retries are retained just like Executor retries.
         self.memory.start(request_id, {
             "raw_input": message,
             "ui_role": user_role,
             "session_ref": session_ref,
-            "planner_status": status,
-            "planner_engine": draft.planner_engine if draft is not None else self.planner.model,
+            "planner_status": "PENDING",
         })
+
+        def record_planner_retry(attempt: int) -> None:
+            self.memory.add_retry(request_id, "planner_llm_error", kind="automatic")
+            self.memory.record_operation(
+                "retry", "automatic", request_id=request_id,
+                attempt=attempt, stage="planner",
+            )
+
+        draft, status, ambiguous = self.planner.draft(
+            message, request_id, previous_context,
+            on_retry=record_planner_retry,
+        )
+        self.memory.update(
+            request_id,
+            planner_status=status,
+            planner_engine=draft.planner_engine if draft is not None else self.planner.model,
+        )
         if status == "llm_plan_error":
             scenario = self.test_scenarios.active()
             if scenario == "llm_invalid_schema":

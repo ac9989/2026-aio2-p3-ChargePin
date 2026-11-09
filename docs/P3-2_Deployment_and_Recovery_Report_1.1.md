@@ -17,7 +17,7 @@ ChargePin은 Streamlit 프론트엔드와 FastAPI 백엔드를 Docker Compose로
 장애 대응은 네 층이다.
 
 1. **입력·계획 층**: 위험한 요청과 LLM 구조화 오류를 Provider 호출 전에 차단한다.
-2. **조회·품질 층**: Provider의 일시 오류는 최대 2회 재시도하고, 지연·이상값은 안전한 응답으로 전환한다.
+2. **조회·품질 층**: 재시도 가능한 Provider 오류와 일시적 Executor·Planner 오류는 최대 2회 재시도하고, 지속 오류·지연·이상값은 안전한 응답으로 전환한다.
 3. **컨테이너 층**: healthcheck, Compose restart 정책, 로컬 Watchdog, 배포 SHA 롤백 정책으로 컨테이너 장애를 다룬다.
 4. **운영 관측 층**: Handoff·세션은 메모리로 관리하고, 익명화된 운영 이벤트는 호스트의 JSONL 로그에 남긴다. CI/CD 실패는 Discord 웹훅으로 팀 채널에 알린다.
 
@@ -73,8 +73,8 @@ flowchart LR
 | --- | --- | --- | --- |
 | API timeout·연결 오류·429·5xx | `ProviderError(retryable=True)` | 0.25초·0.5초 대기, 자동 최대 2회 재시도 후 안전 응답 | retry history, `retry` 이벤트 |
 | API 401/403·형식 오류 | 비재시도 ProviderError | 재시도하지 않고 인증·응답 확인 안내 | 운영 이벤트 |
-| Executor 예외 | Orchestrator 예외 처리 | 내부 500 원문을 노출하지 않고 `SAFE_UNAVAILABLE` | `executor_exception`, `agent_error` |
-| LLM 호출·스키마 오류 | Planner 구조화 결과 검증 실패 | Executor·Provider 호출 없이 `NEEDS_INPUT` | `llm_plan_error`, 오류 로그 |
+| Executor 예외 | Orchestrator 예외 처리 | 일시 오류는 자동 최대 2회 재시도, 지속 오류는 내부 500 원문 없이 `SAFE_UNAVAILABLE` | retry history, `executor_exception`, `agent_error` |
+| LLM 호출·스키마 오류 | Planner 구조화 결과 검증 실패 | 일시 오류는 자동 최대 2회 재시도, 지속 오류는 Executor·Provider 호출 없이 `NEEDS_INPUT` | retry history, `llm_plan_error`, 오류 로그 |
 | stale·invalid_count | Critic 최신성·수량 검증 | 정보 지연·확인 불가, 부정확한 수량 숨김 | Critic verdict·findings |
 | frontend unhealthy 연속 관측 | Watchdog 상태 관측 | 정책 조건 충족 시 재시작 시도 | `ops/logs/autoheal.jsonl` |
 | 배포 healthcheck 실패 | `up --wait` 실패 | 직전 성공 SHA 롤백 시도 | CD 실행 로그·Discord 알림 |
@@ -120,8 +120,8 @@ Test API는 실제 제공처·LLM에 장애를 발생시키지 않는다. 아래
 | 시나리오 | 횟수 | 실제 결과 | 재시도 |
 | --- | ---: | --- | --- |
 | FT-01 `timeout` | 3 | HTTP 200, `SAFE_UNAVAILABLE` | 각 실행마다 자동 재시도 2회 |
-| FT-02 `executor_exception` | 3 | HTTP 200, `SAFE_UNAVAILABLE` | 없음 |
-| FT-04 `llm_invalid_schema` | 3 | HTTP 200, `NEEDS_INPUT`, Provider 미호출 | 없음 |
+| FT-02 `executor_exception` | 3 | HTTP 200, `SAFE_UNAVAILABLE` | 각 실행마다 자동 재시도 2회 |
+| FT-04 `llm_invalid_schema` | 3 | HTTP 200, `NEEDS_INPUT`, Provider 미호출 | 각 실행마다 Planner 자동 재시도 2회 |
 | 합계 | **9 / 9** | 기대한 안전한 종료·응답 확인 | - |
 
 이 수치는 **현재 구현한 3개 시나리오의 실행 통과 수**다. 교육 가이드의 FT-03 DB 연결 오류는 공통 요구로 해석될 수 있으나, ChargePin은 DB를 서비스 구성에 포함하지 않아 해당 시나리오를 구현·시험하지 않았다. 따라서 9/9를 “공통 4종 전체 완료”로 표현하지 않는다.
@@ -132,14 +132,14 @@ timeout의 경우 외부 Provider가 정상으로 회복된 증거가 아니라,
 
 | 구분 | 결과·근거 |
 | --- | --- |
-| Backend pytest | 구조화 로그 보안 테스트가 추가된 뒤 **40 passed** 확인 |
+| Backend pytest | 구조화 로그 보안·Executor/Planner bounded retry 테스트가 추가된 뒤 **46 passed** 확인 |
 | Frontend pytest | **24 passed** (기존 CI 게이트) |
 | Ops pytest | **13 passed** (Watchdog·배포 롤백 정책) |
 | 최신 main CI | 성공 — [run 42561841488](https://github.com/ac9989/2026-aio2-p3-ChargePin/actions/runs/42561841488), 커밋 `467e1e1` |
 | 최신 main CD | 성공 — [run 42562090395](https://github.com/ac9989/2026-aio2-p3-ChargePin/actions/runs/42562090395), 커밋 `467e1e1` |
 | 실패 알림 | feature 브랜치의 의도적 pytest 실패 시 Discord 수신 확인 — [실패 run 42557685477](https://github.com/ac9989/2026-aio2-p3-ChargePin/actions/runs/42557685477) |
 
-현재 코드 단위·계약·운영 정책 테스트의 합계는 **77개(Backend 40, Frontend 24, Ops 13)**다. Docker 통합 화면·EC2의 실제 서비스 장애 롤아웃은 별도 화면/실행 증빙으로 구분한다.
+현재 코드 단위·계약·운영 정책 테스트의 합계는 **83개(Backend 46, Frontend 24, Ops 13)**다. Docker 통합 화면·EC2의 실제 서비스 장애 롤아웃은 별도 화면/실행 증빙으로 구분한다.
 
 ## 7. 운영 절차
 
@@ -167,7 +167,7 @@ Get-Content logs\service.log -Tail 10
 ### 7.2 Test API 9회 증빙
 
 1. 로컬 `.env`에서 `CHARGEPIN_ENABLE_FAULT_INJECTION=true`로 설정한다.
-2. Compose를 재기동하고 상급 관리자 키를 현재 PowerShell 세션의 `CHARGEPIN_TEST_OPERATOR_KEY`에만 설정한다.
+2. Compose 또는 격리된 FastAPI 테스트 서버를 기동하고 상급 관리자 키를 현재 PowerShell 세션의 `CHARGEPIN_TEST_OPERATOR_KEY`에만 설정한다.
 3. `py Backend/scripts/run_fault_evidence.py --repeat 3`을 실행한다.
 4. `artifacts/fault-recovery-evidence.json`, 운영 대시보드, `logs/service.log`를 캡처한다.
 5. 종료 후 기능 플래그를 `false`로 되돌리고 Compose를 재기동한다.
