@@ -83,7 +83,7 @@ class InputGuardrail:
         )),
         ("PRIVILEGE_CHANGE", re.compile(
             r"(?:(?:권한|등급|역할|관리자|admin).{0,14}(?:변경|수정|바꾸|바꿈|조정|조작|전환|설정|"
-            r"승급|강등|올리|내리|부여|삭제|해줘|만들어|되게)|(?:나를|내).{0,14}"
+            r"승급|강등|올리|내리|부여|삭제|해줘|만들어|되게|바꿔|줘)|(?:나를|내).{0,14}"
             r"(?:상급|하급)?(?:관리자|admin).{0,12}(?:해줘|만들어|되게)|"
             r"(?:role|privilege|permission|admin).{0,14}(?:change|modify|update|switch|grant|promote|demote|delete)|"
             r"(?:make|set).{0,14}(?:admin|role|privilege|permission))"
@@ -179,7 +179,7 @@ Rules:
         """
         value = cls._location_query(message)
         value = re.sub(
-            r"(?:그|여기|현재|이전|방금|만|로|으로|바꿔|변경|다시|그대로|"
+            r"(?:그|여기|현재|이전|방금|만|로|으로|바꿔|변경|다시|그대로|정도|쯤|"
             r"조건|설정|범위|거리|에서|에|해|줘|주세요)",
             " ",
             value,
@@ -850,6 +850,7 @@ class SearchOrchestrator:
             request_id,
             search_request=request.model_dump(mode="json"),
             selected_candidate=selected.model_dump(mode="json"),
+            candidate_options=[candidate.model_dump(mode="json") for candidate in candidates],
         )
         types = "·".join("급속" if item == ConnectorType.FAST else "완속" for item in draft.connector_types)
         return ChatPlanResponse(
@@ -875,7 +876,12 @@ class SearchOrchestrator:
             return ChatPlanResponse(request_id=request_id, status="NEEDS_INPUT", message="검색을 취소했습니다. 다른 장소를 입력해 주세요.")
         if "candidates" in handoff:
             candidates = [PlaceCandidate.model_validate(item) for item in handoff["candidates"]]
-            selected = next((candidate for candidate in candidates if candidate.candidate_id == confirmation.candidate_id), candidates[0])
+            selected = next((candidate for candidate in candidates
+                             if candidate.candidate_id == confirmation.candidate_id), None)
+            if confirmation.candidate_id and selected is None:
+                raise ValueError("확인할 장소 후보를 찾지 못했습니다.")
+            # Preserve existing legacy client behavior when no candidate id is supplied.
+            selected = selected or candidates[0]
             selected_location_name = selected.name
             region_filters = [f"zscode:{selected.district_code}"] if selected.district_code else []
             conditions = handoff.get("planner_conditions", {})
@@ -896,6 +902,20 @@ class SearchOrchestrator:
             request = SearchRequest.model_validate(handoff["search_request"])
             request.user_confirmed = True
             selected_data = handoff.get("selected_candidate", {})
+            # Named-place plans carry a default suggestion, but the frontend can
+            # explicitly select any Kakao candidate. Never ignore that choice.
+            if confirmation.candidate_id:
+                options = [PlaceCandidate.model_validate(item)
+                           for item in handoff.get("candidate_options", [])]
+                chosen = next((item for item in options
+                               if item.candidate_id == confirmation.candidate_id), None)
+                if chosen is None:
+                    raise ValueError("확인할 장소 후보를 찾지 못했습니다.")
+                request.center = chosen.location
+                request.region_filters = (
+                    [f"zscode:{chosen.district_code}"] if chosen.district_code else []
+                )
+                selected_data = chosen.model_dump(mode="json")
             selected_location_name = selected_data.get("name") if isinstance(selected_data, dict) else None
             if not isinstance(selected_location_name, str) or not selected_location_name.strip():
                 selected_location_name = ""

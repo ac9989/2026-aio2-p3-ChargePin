@@ -1,0 +1,46 @@
+name: ChargePin Browser Regression (isolated)
+
+on:
+  push:
+    branches:
+      - feature/fix-failed-10-20261109
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'Frontend/**'
+      - '.github/workflows/browser-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  chromium-streamlit-smoke:
+    name: Real Chromium + Streamlit smoke (mock Backend)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: Frontend/requirements.txt
+      - name: Install frontend and Chromium runner
+        run: |
+          python -m pip install -r Frontend/requirements.txt
+          python -m pip install playwright==1.56.0
+          python -m playwright install --with-deps chromium
+      - name: Exercise real browser interactions with local mock API
+        working-directory: Frontend
+        env:
+          BROWSER_ARTIFACT_DIR: ${{ runner.temp }}/chargepin-browser
+        run: python tests/browser_smoke.py
+      - name: Keep browser screenshots, API calls and Streamlit errors
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chargepin-browser-regression
+          path: ${{ runner.temp }}/chargepin-browser
+          if-no-files-found: warn
+          retention-days: 7
