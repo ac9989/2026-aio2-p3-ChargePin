@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import unittest
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from threading import Thread
 from unittest.mock import Mock, patch
 
 import requests
@@ -32,6 +34,40 @@ class BackendConnectionRecoveryTests(unittest.TestCase):
         self.assertEqual(events[0]["outcome"], "error")
         self.assertEqual(events[1]["outcome"], "success")
         self.assertNotIn("internal_secret_never_expose", str(events))
+
+    def test_ft09_real_loopback_connection_down_then_up(self):
+        """Use a real localhost TCP connection; never contact EC2 or provider APIs."""
+        class HealthHandler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b'{"status":"ok","service":"chargepin-backend"}')
+
+            def log_message(self, format, *args):
+                pass
+
+        # Reserve a localhost port, release it to force a true connection refusal,
+        # then start the isolated mock health service on that same port.
+        reservation = HTTPServer(("127.0.0.1", 0), HealthHandler)
+        port = reservation.server_address[1]
+        reservation.server_close()
+        client = ChargePinApi()
+        client.service_url = f"http://127.0.0.1:{port}"
+        client.base_url = client.service_url + "/api/v1"
+        with self.assertRaises(ApiError) as context:
+            client.health()
+        self.assertIn("백엔드에 연결하지 못했습니다", context.exception.message)
+
+        server = HTTPServer(("127.0.0.1", port), HealthHandler)
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            self.assertEqual(client.health()["status"], "ok")
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=3)
 
     def test_ft09_timeout_then_health_recovers(self):
         client = ChargePinApi()
