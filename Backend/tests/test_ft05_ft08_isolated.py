@@ -130,6 +130,13 @@ class ExtendedFaultTests(unittest.TestCase):
         self.assertEqual(payload["status"], "degraded")
         self.assertEqual(len(orchestrator.memory.handoffs[payload["request_id"]]["retry_history"]), 0)
         self.assertEqual(payload["critic_decision"], "SAFE_UNAVAILABLE")
+        search_events = [
+            e for e in orchestrator.memory.operation_events
+            if e.get("event_type") == "search" and e.get("request_id") == payload["request_id"]
+        ]
+        self.assertEqual(len(search_events), 1)
+        self.assertEqual(search_events[0]["provider"], "KECO")
+        self.assertEqual(search_events[0]["retry_count"], 0)
 
     def test_ft08_stale_invalid_count_and_missing_timestamp(self):
         request = SearchRequest(
