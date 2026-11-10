@@ -345,11 +345,13 @@ Pop-Location
 
 ## 👥 함께 만든 사람들
 
-| [박동준](https://github.com/DongJunee) | [신영석](https://github.com/WithAndWithout0094) | [조권식](https://github.com/ac9989) | [성관현](https://github.com/tsurien) |
+
+| 박동준 | 신영석 | 조권식 | 성관현 |
 |:---:|:---:|:---:|:---:|
 | **팀장·PM** | **Backend·QA** | **DevOps** | **Frontend** |
 | 백엔드 아키텍처 설계<br>보안 가드레일 | API 연동<br>데이터 검증·QA | Docker·GitHub Actions<br>AWS 배포·Auto Healing | 사용자 화면<br>운영 대시보드 |
-| [개인 회고](docs/retrospectives/park-dongjun.md) | [개인 회고](docs/retrospectives/shin-youngseok.md) | [개인 회고](docs/retrospectives/cho-kwonsik.md) | [개인 회고](docs/retrospectives/seong-gwanhyeon.md) |
+| [개인 회고](docs/retrospectives/park-dongjun.md) &nbsp; <a href="https://github.com/DongJunee"><img src="https://cdn.simpleicons.org/github/808080" width="17" height="17" alt="GitHub"></a> | [개인 회고](docs/retrospectives/shin-youngseok.md) &nbsp; <a href="https://github.com/WithAndWithout0094"><img src="https://cdn.simpleicons.org/github/808080" width="17" height="17" alt="GitHub"></a> | [개인 회고](docs/retrospectives/cho-kwonsik.md) &nbsp; <a href="https://github.com/ac9989"><img src="https://cdn.simpleicons.org/github/808080" width="17" height="17" alt="GitHub"></a> | [개인 회고](docs/retrospectives/seong-gwanhyeon.md) &nbsp; <a href="https://github.com/tsurien"><img src="https://cdn.simpleicons.org/github/808080" width="17" height="17" alt="GitHub"></a> |
+
 
 ## 🗺️ 다음에 채워 갈 것들
 
