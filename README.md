@@ -349,7 +349,7 @@ Pop-Location
 |:---:|:---:|:---:|:---:|
 | **팀장·PM** | **Backend·QA** | **DevOps** | **Frontend** |
 | 백엔드 아키텍처 설계<br>보안 가드레일 | API 연동<br>데이터 검증·QA | Docker·GitHub Actions<br>AWS 배포·Auto Healing | 사용자 화면<br>운영 대시보드 |
-| [📝 회고](docs/retrospectives/park-dongjun.md) | [📝 회고](docs/retrospectives/shin-youngseok.md) | [📝 회고](docs/retrospectives/cho-kwonsik.md) | [📝 회고](docs/retrospectives/seong-gwanhyeon.md) |
+| [개인 회고](docs/retrospectives/park-dongjun.md) | [개인 회고](docs/retrospectives/shin-youngseok.md) | [개인 회고](docs/retrospectives/cho-kwonsik.md) | [개인 회고](docs/retrospectives/seong-gwanhyeon.md) |
 
 ## 🗺️ 다음에 채워 갈 것들
 
